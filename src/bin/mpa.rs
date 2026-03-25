@@ -14,6 +14,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cmd = args.remove(0);
     match cmd.as_str() {
+        "--version" | "-V" | "-v" => {
+            println!("mpa {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
         "install" => install_cmd(args),
         "tui" => {
             tui::run()?;
