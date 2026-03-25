@@ -1,6 +1,6 @@
 [package]
 name = "mpa-core"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 
 [lib]
@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 async-trait = "0.1"
+base64 = "0.22"
 crossterm = "0.28"
 dirs = "5"
 once_cell = "1"

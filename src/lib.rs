@@ -1,5 +1,7 @@
+pub mod asset_processor;
 pub mod config;
 pub mod converter;
+pub mod image;
 pub mod platforms;
 pub mod publish;
 pub mod theme;
@@ -15,3 +17,4 @@ pub use publish::{
     AssetProcessor, AssetRef, ProcessInput, ProcessOutput,
 };
 pub use theme::{Theme, ThemeKind, ThemeManager};
+pub use image::{provider_from_config, GeneratedImage, ImageError, ImageProvider};

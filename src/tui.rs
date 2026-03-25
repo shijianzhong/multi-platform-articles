@@ -15,6 +15,16 @@ enum Field {
     Secret,
     ImageProvider,
     ImageApiKey,
+    ImageApiBase,
+    ImageModel,
+    ImageSize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Tab {
+    #[default]
+    WeChat,
+    Image,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,11 +36,15 @@ enum MessageKind {
 
 #[derive(Debug, Default)]
 struct State {
+    tab: Tab,
     field: Field,
     appid: String,
     secret: String,
     image_provider: String,
     image_api_key: String,
+    image_api_base: String,
+    image_model: String,
+    image_size: String,
     message: Option<(String, MessageKind)>,
     dirty: bool,
     reveal_secret: bool,
@@ -38,6 +52,9 @@ struct State {
     env_override_secret: bool,
     env_override_image_provider: bool,
     env_override_image_api_key: bool,
+    env_override_image_api_base: bool,
+    env_override_image_model: bool,
+    env_override_image_size: bool,
 }
 
 pub fn run() -> Result<(), io::Error> {
@@ -60,29 +77,59 @@ pub fn run() -> Result<(), io::Error> {
                     }
                     match key.code {
                         KeyCode::Esc | KeyCode::Char('q') => return Ok(()),
+                        KeyCode::Left => {
+                            state.tab = Tab::WeChat;
+                            state.field = Field::AppId;
+                        }
+                        KeyCode::Right => {
+                            state.tab = Tab::Image;
+                            state.field = Field::ImageProvider;
+                        }
                         KeyCode::Tab => {
-                            state.field = match state.field {
-                                Field::AppId => Field::Secret,
-                                Field::Secret => Field::ImageProvider,
-                                Field::ImageProvider => Field::ImageApiKey,
-                                Field::ImageApiKey => Field::AppId,
-                            };
+                            state.field = match state.tab {
+                                Tab::WeChat => match state.field {
+                                    Field::AppId => Field::Secret,
+                                    _ => Field::AppId,
+                                },
+                                Tab::Image => match state.field {
+                                    Field::ImageProvider => Field::ImageApiKey,
+                                    Field::ImageApiKey => Field::ImageApiBase,
+                                    Field::ImageApiBase => Field::ImageModel,
+                                    Field::ImageModel => Field::ImageSize,
+                                    _ => Field::ImageProvider,
+                                },
+                            }
                         }
                         KeyCode::Up => {
-                            state.field = match state.field {
-                                Field::AppId => Field::ImageApiKey,
-                                Field::Secret => Field::AppId,
-                                Field::ImageProvider => Field::Secret,
-                                Field::ImageApiKey => Field::ImageProvider,
-                            };
+                            state.field = match state.tab {
+                                Tab::WeChat => match state.field {
+                                    Field::Secret => Field::AppId,
+                                    _ => Field::Secret,
+                                },
+                                Tab::Image => match state.field {
+                                    Field::ImageProvider => Field::ImageSize,
+                                    Field::ImageApiKey => Field::ImageProvider,
+                                    Field::ImageApiBase => Field::ImageApiKey,
+                                    Field::ImageModel => Field::ImageApiBase,
+                                    Field::ImageSize => Field::ImageModel,
+                                    _ => Field::ImageProvider,
+                                },
+                            }
                         }
                         KeyCode::Down => {
-                            state.field = match state.field {
-                                Field::AppId => Field::Secret,
-                                Field::Secret => Field::ImageProvider,
-                                Field::ImageProvider => Field::ImageApiKey,
-                                Field::ImageApiKey => Field::AppId,
-                            };
+                            state.field = match state.tab {
+                                Tab::WeChat => match state.field {
+                                    Field::AppId => Field::Secret,
+                                    _ => Field::AppId,
+                                },
+                                Tab::Image => match state.field {
+                                    Field::ImageProvider => Field::ImageApiKey,
+                                    Field::ImageApiKey => Field::ImageApiBase,
+                                    Field::ImageApiBase => Field::ImageModel,
+                                    Field::ImageModel => Field::ImageSize,
+                                    _ => Field::ImageProvider,
+                                },
+                            }
                         }
                         KeyCode::Char('r') => {
                             state.reveal_secret = !state.reveal_secret;
@@ -106,6 +153,9 @@ pub fn run() -> Result<(), io::Error> {
                                 Field::Secret => &mut state.secret,
                                 Field::ImageProvider => &mut state.image_provider,
                                 Field::ImageApiKey => &mut state.image_api_key,
+                                Field::ImageApiBase => &mut state.image_api_base,
+                                Field::ImageModel => &mut state.image_model,
+                                Field::ImageSize => &mut state.image_size,
                             };
                             target.pop();
                             state.dirty = true;
@@ -116,6 +166,9 @@ pub fn run() -> Result<(), io::Error> {
                                 Field::Secret => &mut state.secret,
                                 Field::ImageProvider => &mut state.image_provider,
                                 Field::ImageApiKey => &mut state.image_api_key,
+                                Field::ImageApiBase => &mut state.image_api_base,
+                                Field::ImageModel => &mut state.image_model,
+                                Field::ImageSize => &mut state.image_size,
                             };
                             target.push(c);
                             state.dirty = true;
@@ -136,6 +189,7 @@ pub fn run() -> Result<(), io::Error> {
 fn load_state() -> State {
     let cfg = Config::load();
     let mut state = State {
+        tab: Tab::WeChat,
         field: Field::AppId,
         ..Default::default()
     };
@@ -149,6 +203,15 @@ fn load_state() -> State {
     if let Some(k) = cfg.image.api_key {
         state.image_api_key = k;
     }
+    if let Some(v) = cfg.image.api_base {
+        state.image_api_base = v;
+    }
+    if let Some(v) = cfg.image.model {
+        state.image_model = v;
+    }
+    if let Some(v) = cfg.image.size {
+        state.image_size = v;
+    }
     state.env_override_appid = std::env::var("WECHAT_APPID")
         .ok()
         .is_some_and(|v| !v.trim().is_empty());
@@ -161,12 +224,29 @@ fn load_state() -> State {
     state.env_override_image_api_key = std::env::var("IMAGE_API_KEY")
         .ok()
         .is_some_and(|v| !v.trim().is_empty());
+    state.env_override_image_api_base = std::env::var("IMAGE_API_BASE")
+        .ok()
+        .is_some_and(|v| !v.trim().is_empty());
+    state.env_override_image_model = std::env::var("IMAGE_MODEL")
+        .ok()
+        .is_some_and(|v| !v.trim().is_empty());
+    state.env_override_image_size = std::env::var("IMAGE_SIZE")
+        .ok()
+        .is_some_and(|v| !v.trim().is_empty());
     state
 }
 
 fn save_state(state: &State) -> Result<(), ConfigError> {
     let cfg = Config::load();
-    cfg.save_credentials(state.appid.clone(), state.secret.clone(), state.image_provider.clone(), state.image_api_key.clone())
+    cfg.save_credentials(
+        state.appid.clone(),
+        state.secret.clone(),
+        state.image_provider.clone(),
+        state.image_api_key.clone(),
+        state.image_api_base.clone(),
+        state.image_model.clone(),
+        state.image_size.clone(),
+    )
 }
 
 fn draw(f: &mut Frame, state: &State) {
@@ -174,7 +254,7 @@ fn draw(f: &mut Frame, state: &State) {
     f.render_widget(Clear, area);
 
     let width = area.width.min(92);
-    let height = area.height.min(30);
+    let height = area.height.min(36);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let card = Rect {
@@ -202,7 +282,7 @@ fn draw(f: &mut Frame, state: &State) {
         .constraints([
             Constraint::Length(3),
             Constraint::Length(1),
-            Constraint::Length(16),
+            Constraint::Min(12),
             Constraint::Length(3),
             Constraint::Min(1),
         ])
@@ -225,130 +305,138 @@ fn draw(f: &mut Frame, state: &State) {
     .block(Block::default());
     f.render_widget(header, layout[0]);
 
-    let tabs = Tabs::new(vec![Line::from("配置中心 (Credentials & API Keys)")])
-        .select(0)
+    let tabs = Tabs::new(vec![Line::from("WeChat"), Line::from("Image")])
+        .select(if state.tab == Tab::WeChat { 0 } else { 1 })
         .highlight_style(Style::default().fg(Color::Cyan))
         .style(Style::default().fg(Color::DarkGray));
     f.render_widget(tabs, layout[1]);
-
-    let body = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(4), Constraint::Length(4), Constraint::Length(4), Constraint::Length(4)].as_ref())
-        .split(layout[2]);
 
     let active_border = Style::default().fg(Color::Cyan);
     let inactive_border = Style::default().fg(Color::DarkGray);
     let dim = Style::default().fg(Color::DarkGray);
 
-    let appid_title = if state.env_override_appid {
-        "WECHAT_APPID (env 覆盖中)"
-    } else {
-        "WECHAT_APPID"
-    };
-    let appid_border = if state.field == Field::AppId {
-        active_border
-    } else {
-        inactive_border
-    };
-    let appid_text = if state.appid.is_empty() {
-        Text::from(Line::styled("在此输入 AppID…", dim))
-    } else {
-        Text::from(state.appid.as_str())
-    };
-    let appid = Paragraph::new(appid_text)
-        .block(
-            Block::default()
-                .title(appid_title)
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(appid_border),
-        )
-        .style(Style::default().fg(Color::White));
-    f.render_widget(appid, body[0]);
+    let mut fields: Vec<(String, Text, Field)> = Vec::new();
+    match state.tab {
+        Tab::WeChat => {
+            let title = if state.env_override_appid {
+                "WECHAT_APPID (env 覆盖中)".to_string()
+            } else {
+                "WECHAT_APPID".to_string()
+            };
+            let text = if state.appid.is_empty() {
+                Text::from(Line::styled("在此输入 AppID…", dim))
+            } else {
+                Text::from(state.appid.as_str())
+            };
+            fields.push((title, text, Field::AppId));
 
-    let secret_title = if state.env_override_secret {
-        "WECHAT_SECRET (env 覆盖中)"
-    } else {
-        "WECHAT_SECRET"
-    };
-    let secret_border = if state.field == Field::Secret {
-        active_border
-    } else {
-        inactive_border
-    };
-    let secret_value = if state.secret.is_empty() {
-        Text::from(Line::styled("在此输入 Secret…", dim))
-    } else if state.reveal_secret {
-        Text::from(state.secret.as_str())
-    } else {
-        Text::from("•".repeat(state.secret.chars().count()))
-    };
-    let secret = Paragraph::new(secret_value)
-        .block(
-            Block::default()
-                .title(format!("{secret_title}  (r 显示/隐藏)"))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(secret_border),
-        )
-        .style(Style::default().fg(Color::White));
-    f.render_widget(secret, body[1]);
+            let title = if state.env_override_secret {
+                "WECHAT_SECRET (env 覆盖中)".to_string()
+            } else {
+                "WECHAT_SECRET".to_string()
+            };
+            let text = if state.secret.is_empty() {
+                Text::from(Line::styled("在此输入 Secret…", dim))
+            } else if state.reveal_secret {
+                Text::from(state.secret.as_str())
+            } else {
+                Text::from("•".repeat(state.secret.chars().count()))
+            };
+            fields.push((format!("{title}  (r 显示/隐藏)"), text, Field::Secret));
+        }
+        Tab::Image => {
+            let title = if state.env_override_image_provider {
+                "IMAGE_PROVIDER (env 覆盖中)".to_string()
+            } else {
+                "IMAGE_PROVIDER (openai/tuzi/modelscope/openrouter/gemini)".to_string()
+            };
+            let text = if state.image_provider.is_empty() {
+                Text::from(Line::styled("在此输入配图服务商…", dim))
+            } else {
+                Text::from(state.image_provider.as_str())
+            };
+            fields.push((title, text, Field::ImageProvider));
 
-    let image_provider_title = if state.env_override_image_provider {
-        "IMAGE_PROVIDER (env 覆盖中)"
-    } else {
-        "IMAGE_PROVIDER (配图服务商，如 modelscope)"
-    };
-    let image_provider_border = if state.field == Field::ImageProvider {
-        active_border
-    } else {
-        inactive_border
-    };
-    let image_provider_text = if state.image_provider.is_empty() {
-        Text::from(Line::styled("在此输入配图服务商…", dim))
-    } else {
-        Text::from(state.image_provider.as_str())
-    };
-    let image_provider = Paragraph::new(image_provider_text)
-        .block(
-            Block::default()
-                .title(image_provider_title)
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(image_provider_border),
-        )
-        .style(Style::default().fg(Color::White));
-    f.render_widget(image_provider, body[2]);
+            let title = if state.env_override_image_api_key {
+                "IMAGE_API_KEY (env 覆盖中)".to_string()
+            } else {
+                "IMAGE_API_KEY".to_string()
+            };
+            let text = if state.image_api_key.is_empty() {
+                Text::from(Line::styled("在此输入配图服务 API Key…", dim))
+            } else {
+                Text::from(state.image_api_key.as_str())
+            };
+            fields.push((title, text, Field::ImageApiKey));
 
-    let image_api_title = if state.env_override_image_api_key {
-        "IMAGE_API_KEY (env 覆盖中)"
-    } else {
-        "IMAGE_API_KEY (配图服务)"
-    };
-    let image_api_border = if state.field == Field::ImageApiKey {
-        active_border
-    } else {
-        inactive_border
-    };
-    let image_api_text = if state.image_api_key.is_empty() {
-        Text::from(Line::styled("在此输入配图服务 API Key…", dim))
-    } else {
-        Text::from(state.image_api_key.as_str())
-    };
-    let image_api = Paragraph::new(image_api_text)
-        .block(
-            Block::default()
-                .title(image_api_title)
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(image_api_border),
-        )
-        .style(Style::default().fg(Color::White));
-    f.render_widget(image_api, body[3]);
+            let title = if state.env_override_image_api_base {
+                "IMAGE_API_BASE (env 覆盖中)".to_string()
+            } else {
+                "IMAGE_API_BASE (可选，tuzi 必填)".to_string()
+            };
+            let text = if state.image_api_base.is_empty() {
+                Text::from(Line::styled("在此输入 API Base…", dim))
+            } else {
+                Text::from(state.image_api_base.as_str())
+            };
+            fields.push((title, text, Field::ImageApiBase));
+
+            let title = if state.env_override_image_model {
+                "IMAGE_MODEL (env 覆盖中)".to_string()
+            } else {
+                "IMAGE_MODEL (可选)".to_string()
+            };
+            let text = if state.image_model.is_empty() {
+                Text::from(Line::styled("在此输入模型…", dim))
+            } else {
+                Text::from(state.image_model.as_str())
+            };
+            fields.push((title, text, Field::ImageModel));
+
+            let title = if state.env_override_image_size {
+                "IMAGE_SIZE (env 覆盖中)".to_string()
+            } else {
+                "IMAGE_SIZE (可选，如 1024x1024)".to_string()
+            };
+            let text = if state.image_size.is_empty() {
+                Text::from(Line::styled("在此输入尺寸…", dim))
+            } else {
+                Text::from(state.image_size.as_str())
+            };
+            fields.push((title, text, Field::ImageSize));
+        }
+    }
+
+    let constraints: Vec<Constraint> = std::iter::repeat(Constraint::Length(4))
+        .take(fields.len())
+        .collect();
+    let body = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(layout[2]);
+    for (i, (title, text, field)) in fields.into_iter().enumerate() {
+        let border = if state.field == field {
+            active_border
+        } else {
+            inactive_border
+        };
+        let p = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(border),
+            )
+            .style(Style::default().fg(Color::White));
+        f.render_widget(p, body[i]);
+    }
 
     let hints = vec![
         Span::styled("Tab/↑↓", Style::default().fg(Color::Cyan)),
         Span::raw(" 切换  "),
+        Span::styled("←/→", Style::default().fg(Color::Cyan)),
+        Span::raw(" 分页  "),
         Span::styled("输入/Backspace", Style::default().fg(Color::Cyan)),
         Span::raw(" 编辑  "),
         Span::styled("s", Style::default().fg(Color::Cyan)),
@@ -383,7 +471,14 @@ fn draw(f: &mut Frame, state: &State) {
     let config_path = Config::config_path()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "-".to_string());
-    let env_note = if state.env_override_appid || state.env_override_secret || state.env_override_image_provider || state.env_override_image_api_key {
+    let env_note = if state.env_override_appid
+        || state.env_override_secret
+        || state.env_override_image_provider
+        || state.env_override_image_api_key
+        || state.env_override_image_api_base
+        || state.env_override_image_model
+        || state.env_override_image_size
+    {
         "环境变量将覆盖配置"
     } else {
         "可用环境变量覆盖"

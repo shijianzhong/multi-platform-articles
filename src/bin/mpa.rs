@@ -1,7 +1,9 @@
 use mpa_core::converter::{ConvertMode, ConvertRequest, MarkdownConverter};
 use mpa_core::platforms::wechat::WechatPublisher;
 use mpa_core::platforms::{DraftArticle, Publisher};
+use mpa_core::publish::{AssetKind, AssetPipeline, AssetRef, ProcessInput};
 use mpa_core::{tui, ApiConfig, Config, ThemeManager};
+use regex::Regex;
 use std::path::{Path, PathBuf};
 
 #[tokio::main]
@@ -280,7 +282,7 @@ async fn convert_cmd(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>
 
 async fn publish_cmd(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
     if args.is_empty() {
-        eprintln!("usage: mpa publish wechat-draft --html <file.html> --title <title> --cover <cover.jpg> [--author <name>] [--digest <text>]");
+        eprintln!("usage: mpa publish wechat-draft (--md <file.md> | --html <file.html>) --cover <cover.jpg> [--title <title>] [--author <name>] [--digest <text>] [--mode local|api|ai] [--theme <name>]");
         std::process::exit(2);
     }
 
@@ -292,15 +294,22 @@ async fn publish_cmd(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>
 }
 
 async fn publish_wechat_draft(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut md_path: Option<PathBuf> = None;
     let mut html_path: Option<PathBuf> = None;
     let mut title: Option<String> = None;
     let mut cover: Option<PathBuf> = None;
     let mut author: Option<String> = None;
     let mut digest: Option<String> = None;
+    let mut mode: ConvertMode = ConvertMode::Local;
+    let mut theme: String = "default".to_string();
 
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "--md" => {
+                i += 1;
+                md_path = Some(PathBuf::from(args.get(i).ok_or("missing --md value")?));
+            }
             "--html" => {
                 i += 1;
                 html_path = Some(PathBuf::from(args.get(i).ok_or("missing --html value")?));
@@ -321,6 +330,23 @@ async fn publish_wechat_draft(args: Vec<String>) -> Result<(), Box<dyn std::erro
                 i += 1;
                 digest = Some(args.get(i).cloned().ok_or("missing --digest value")?);
             }
+            "--mode" => {
+                i += 1;
+                mode = match args.get(i).map(|s| s.as_str()) {
+                    Some("local") => ConvertMode::Local,
+                    Some("api") => ConvertMode::Api,
+                    Some("ai") => ConvertMode::Ai,
+                    Some(v) => return Err(format!("invalid mode: {v}").into()),
+                    None => return Err("missing --mode value".into()),
+                };
+            }
+            "--theme" => {
+                i += 1;
+                theme = args
+                    .get(i)
+                    .cloned()
+                    .ok_or_else(|| "missing --theme value".to_string())?;
+            }
             other => return Err(format!("unknown arg: {other}").into()),
         }
         i += 1;
@@ -329,17 +355,102 @@ async fn publish_wechat_draft(args: Vec<String>) -> Result<(), Box<dyn std::erro
     let cfg = Config::load();
     let wechat_cfg = cfg
         .wechat
+        .clone()
         .ok_or("missing WECHAT_APPID/WECHAT_SECRET (or configure in mpa tui)")?;
-    let publisher = WechatPublisher::new(wechat_cfg)?;
+    let publisher_cover = WechatPublisher::new(wechat_cfg.clone())?;
+    let publisher_assets = WechatPublisher::new(wechat_cfg.clone())?;
+    let publisher_draft = WechatPublisher::new(wechat_cfg)?;
 
     let cover_path = cover.ok_or("missing --cover")?;
-    let uploaded = publisher.upload_image_file(&cover_path).await?;
+    let uploaded = publisher_cover.upload_image_file(&cover_path).await?;
 
-    let html_path = html_path.ok_or("missing --html")?;
-    let content_html = std::fs::read_to_string(html_path)?;
+    let (mut content_html, assets, inferred) = if let Some(md_path) = md_path {
+        let markdown = std::fs::read_to_string(&md_path)?;
+        let meta = mpa_core::parse_article_metadata(&markdown);
 
-    let title = title.ok_or("missing --title")?;
-    let result = publisher
+        let themes = ThemeManager::new();
+        let converter = MarkdownConverter::new(
+            ApiConfig {
+                md2wechat_api_key: cfg.api.md2wechat_api_key.clone(),
+                md2wechat_base_url: cfg.api.md2wechat_base_url.clone(),
+            },
+            themes,
+        );
+        let result = converter
+            .convert(ConvertRequest {
+                markdown: markdown.clone(),
+                mode,
+                theme: theme.clone(),
+                api_key: None,
+                font_size: None,
+                background_type: None,
+                custom_prompt: None,
+            })
+            .await?;
+
+        if result.prompt.is_some() {
+            return Err("convert returned prompt; use --mode local|api for publishing".into());
+        }
+        let html = result.html.ok_or("no html produced")?;
+
+        let base_dir = md_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let assets = result
+            .images
+            .into_iter()
+            .map(|img| {
+                let (kind, source, prompt) = match img.kind {
+                    mpa_core::ImageKind::Local => (AssetKind::Local, img.original.clone(), None),
+                    mpa_core::ImageKind::Remote => (AssetKind::Remote, img.original.clone(), None),
+                    mpa_core::ImageKind::Ai => {
+                        let p = img.ai_prompt.clone().or(Some(img.original.clone()));
+                        (AssetKind::Ai, img.original.clone(), p)
+                    }
+                };
+                let resolved_source = if kind == AssetKind::Local {
+                    Some(base_dir.join(&source).to_string_lossy().to_string())
+                } else {
+                    None
+                };
+                AssetRef {
+                    index: img.index,
+                    kind,
+                    source: source.clone(),
+                    resolved_source,
+                    prompt,
+                    placeholder: Some(img.placeholder),
+                    media_id: None,
+                    public_url: None,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        (html, assets, Some(meta))
+    } else {
+        let html_path = html_path.ok_or("missing --md or --html")?;
+        let html = std::fs::read_to_string(&html_path)?;
+        let base_dir = html_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let assets = parse_assets_from_html(&html, &base_dir);
+        (html, assets, None)
+    };
+
+    if !assets.is_empty() {
+        let processor = mpa_core::asset_processor::WechatAssetProcessor::new(cfg.clone(), publisher_assets)?;
+        let pipeline = AssetPipeline::new(processor);
+        let out = pipeline.process(&ProcessInput {
+            html: content_html.clone(),
+            assets,
+        }).await?;
+        content_html = out.html;
+    }
+
+    let title = title
+        .or_else(|| inferred.as_ref().map(|m| m.title.clone()))
+        .filter(|t| !t.trim().is_empty())
+        .ok_or("missing --title (or provide title in markdown front matter)")?;
+    let author = author.or_else(|| inferred.as_ref().and_then(|m| m.author.clone()));
+    let digest = digest.or_else(|| inferred.as_ref().and_then(|m| m.digest.clone()));
+
+    let result = publisher_draft
         .create_draft(vec![DraftArticle {
             title,
             author,
@@ -353,4 +464,70 @@ async fn publish_wechat_draft(args: Vec<String>) -> Result<(), Box<dyn std::erro
 
     println!("{}", result.media_id);
     Ok(())
+}
+
+fn parse_assets_from_html(html: &str, base_dir: &Path) -> Vec<AssetRef> {
+    let mut assets = Vec::new();
+    let re_double =
+        Regex::new(r#"(?i)<img[^>]*src="([^"]+)"[^>]*>"#).expect("img double regex");
+    let re_single =
+        Regex::new(r#"(?i)<img[^>]*src='([^']+)'[^>]*>"#).expect("img single regex");
+
+    let mut srcs = Vec::new();
+    for cap in re_double.captures_iter(html) {
+        if let Some(m) = cap.get(1) {
+            srcs.push(m.as_str().to_string());
+        }
+    }
+    for cap in re_single.captures_iter(html) {
+        if let Some(m) = cap.get(1) {
+            srcs.push(m.as_str().to_string());
+        }
+    }
+
+    for src in srcs.into_iter().filter(|s| !s.trim().is_empty()) {
+        let index = assets.len();
+        let placeholder = format!("<!-- IMG:{index} -->");
+
+        let kind = if src.starts_with("http://") || src.starts_with("https://") {
+            AssetKind::Remote
+        } else if src.starts_with("__generate:") && src.ends_with("__") {
+            AssetKind::Ai
+        } else {
+            AssetKind::Local
+        };
+        let prompt = if kind == AssetKind::Ai {
+            Some(
+                src.trim_start_matches("__generate:")
+                    .trim_end_matches("__")
+                    .trim()
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+
+        let resolved_source = if kind == AssetKind::Local {
+            Some(base_dir.join(&src).to_string_lossy().to_string())
+        } else {
+            None
+        };
+
+        assets.push(AssetRef {
+            index,
+            kind,
+            source: if kind == AssetKind::Ai {
+                prompt.clone().unwrap_or(src.clone())
+            } else {
+                src
+            },
+            resolved_source,
+            prompt,
+            placeholder: Some(placeholder),
+            media_id: None,
+            public_url: None,
+        });
+    }
+
+    assets
 }

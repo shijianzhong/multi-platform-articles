@@ -13,6 +13,9 @@ pub struct Config {
 pub struct ImageConfig {
     pub provider: Option<String>,
     pub api_key: Option<String>,
+    pub api_base: Option<String>,
+    pub model: Option<String>,
+    pub size: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -62,6 +65,18 @@ impl Config {
             .ok()
             .filter(|v| !v.trim().is_empty())
             .or_else(|| file_cfg.image_api_key.clone());
+        let image_api_base = env::var("IMAGE_API_BASE")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| file_cfg.image_api_base.clone());
+        let image_model = env::var("IMAGE_MODEL")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| file_cfg.image_model.clone());
+        let image_size = env::var("IMAGE_SIZE")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| file_cfg.image_size.clone());
 
         Self {
             wechat,
@@ -72,6 +87,9 @@ impl Config {
             image: ImageConfig {
                 provider: image_provider,
                 api_key: image_api_key,
+                api_base: image_api_base,
+                model: image_model,
+                size: image_size,
             },
         }
     }
@@ -82,12 +100,18 @@ impl Config {
         secret: String,
         image_provider: String,
         image_api_key: String,
+        image_api_base: String,
+        image_model: String,
+        image_size: String,
     ) -> Result<(), ConfigError> {
         let mut file_cfg = FileConfig::load_from_disk().unwrap_or_default();
         file_cfg.wechat_appid = Some(appid);
         file_cfg.wechat_secret = Some(secret);
         file_cfg.image_provider = Some(image_provider);
         file_cfg.image_api_key = Some(image_api_key);
+        file_cfg.image_api_base = Some(image_api_base);
+        file_cfg.image_model = Some(image_model);
+        file_cfg.image_size = Some(image_size);
         file_cfg.save_to_disk()
     }
 
@@ -115,6 +139,9 @@ struct FileConfig {
     md2wechat_base_url: Option<String>,
     image_provider: Option<String>,
     image_api_key: Option<String>,
+    image_api_base: Option<String>,
+    image_model: Option<String>,
+    image_size: Option<String>,
 }
 
 impl FileConfig {
