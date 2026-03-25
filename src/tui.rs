@@ -13,6 +13,7 @@ enum Field {
     #[default]
     AppId,
     Secret,
+    ImageApiKey,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,11 +28,13 @@ struct State {
     field: Field,
     appid: String,
     secret: String,
+    image_api_key: String,
     message: Option<(String, MessageKind)>,
     dirty: bool,
     reveal_secret: bool,
     env_override_appid: bool,
     env_override_secret: bool,
+    env_override_image_api_key: bool,
 }
 
 pub fn run() -> Result<(), io::Error> {
@@ -57,11 +60,24 @@ pub fn run() -> Result<(), io::Error> {
                         KeyCode::Tab => {
                             state.field = match state.field {
                                 Field::AppId => Field::Secret,
-                                Field::Secret => Field::AppId,
+                                Field::Secret => Field::ImageApiKey,
+                                Field::ImageApiKey => Field::AppId,
                             };
                         }
-                        KeyCode::Up => state.field = Field::AppId,
-                        KeyCode::Down => state.field = Field::Secret,
+                        KeyCode::Up => {
+                            state.field = match state.field {
+                                Field::AppId => Field::ImageApiKey,
+                                Field::Secret => Field::AppId,
+                                Field::ImageApiKey => Field::Secret,
+                            };
+                        }
+                        KeyCode::Down => {
+                            state.field = match state.field {
+                                Field::AppId => Field::Secret,
+                                Field::Secret => Field::ImageApiKey,
+                                Field::ImageApiKey => Field::AppId,
+                            };
+                        }
                         KeyCode::Char('r') => {
                             state.reveal_secret = !state.reveal_secret;
                         }
@@ -82,6 +98,7 @@ pub fn run() -> Result<(), io::Error> {
                             let target = match state.field {
                                 Field::AppId => &mut state.appid,
                                 Field::Secret => &mut state.secret,
+                                Field::ImageApiKey => &mut state.image_api_key,
                             };
                             target.pop();
                             state.dirty = true;
@@ -90,6 +107,7 @@ pub fn run() -> Result<(), io::Error> {
                             let target = match state.field {
                                 Field::AppId => &mut state.appid,
                                 Field::Secret => &mut state.secret,
+                                Field::ImageApiKey => &mut state.image_api_key,
                             };
                             target.push(c);
                             state.dirty = true;
@@ -117,10 +135,16 @@ fn load_state() -> State {
         state.appid = w.appid;
         state.secret = w.secret;
     }
+    if let Some(k) = cfg.api.md2wechat_api_key {
+        state.image_api_key = k;
+    }
     state.env_override_appid = std::env::var("WECHAT_APPID")
         .ok()
         .is_some_and(|v| !v.trim().is_empty());
     state.env_override_secret = std::env::var("WECHAT_SECRET")
+        .ok()
+        .is_some_and(|v| !v.trim().is_empty());
+    state.env_override_image_api_key = std::env::var("MD2WECHAT_API_KEY")
         .ok()
         .is_some_and(|v| !v.trim().is_empty());
     state
@@ -128,7 +152,7 @@ fn load_state() -> State {
 
 fn save_state(state: &State) -> Result<(), ConfigError> {
     let cfg = Config::load();
-    cfg.save_wechat_credentials(state.appid.clone(), state.secret.clone())
+    cfg.save_credentials(state.appid.clone(), state.secret.clone(), state.image_api_key.clone())
 }
 
 fn draw(f: &mut Frame, state: &State) {
@@ -136,7 +160,7 @@ fn draw(f: &mut Frame, state: &State) {
     f.render_widget(Clear, area);
 
     let width = area.width.min(92);
-    let height = area.height.min(22);
+    let height = area.height.min(26);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let card = Rect {
@@ -164,7 +188,7 @@ fn draw(f: &mut Frame, state: &State) {
         .constraints([
             Constraint::Length(3),
             Constraint::Length(1),
-            Constraint::Length(8),
+            Constraint::Length(12),
             Constraint::Length(3),
             Constraint::Min(1),
         ])
@@ -187,7 +211,7 @@ fn draw(f: &mut Frame, state: &State) {
     .block(Block::default());
     f.render_widget(header, layout[0]);
 
-    let tabs = Tabs::new(vec![Line::from("WeChat Credentials")])
+    let tabs = Tabs::new(vec![Line::from("配置中心 (Credentials & API Keys)")])
         .select(0)
         .highlight_style(Style::default().fg(Color::Cyan))
         .style(Style::default().fg(Color::DarkGray));
@@ -195,7 +219,7 @@ fn draw(f: &mut Frame, state: &State) {
 
     let body = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(4), Constraint::Length(4)].as_ref())
+        .constraints([Constraint::Length(4), Constraint::Length(4), Constraint::Length(4)].as_ref())
         .split(layout[2]);
 
     let active_border = Style::default().fg(Color::Cyan);
@@ -256,6 +280,32 @@ fn draw(f: &mut Frame, state: &State) {
         .style(Style::default().fg(Color::White));
     f.render_widget(secret, body[1]);
 
+    let image_api_title = if state.env_override_image_api_key {
+        "MD2WECHAT_API_KEY (env 覆盖中)"
+    } else {
+        "MD2WECHAT_API_KEY (配图服务)"
+    };
+    let image_api_border = if state.field == Field::ImageApiKey {
+        active_border
+    } else {
+        inactive_border
+    };
+    let image_api_text = if state.image_api_key.is_empty() {
+        Text::from(Line::styled("在此输入配图服务 API Key…", dim))
+    } else {
+        Text::from(state.image_api_key.as_str())
+    };
+    let image_api = Paragraph::new(image_api_text)
+        .block(
+            Block::default()
+                .title(image_api_title)
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(image_api_border),
+        )
+        .style(Style::default().fg(Color::White));
+    f.render_widget(image_api, body[2]);
+
     let hints = vec![
         Span::styled("Tab/↑↓", Style::default().fg(Color::Cyan)),
         Span::raw(" 切换  "),
@@ -293,7 +343,7 @@ fn draw(f: &mut Frame, state: &State) {
     let config_path = Config::config_path()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "-".to_string());
-    let env_note = if state.env_override_appid || state.env_override_secret {
+    let env_note = if state.env_override_appid || state.env_override_secret || state.env_override_image_api_key {
         "环境变量将覆盖配置"
     } else {
         "可用环境变量覆盖"

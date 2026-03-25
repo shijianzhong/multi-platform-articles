@@ -56,14 +56,16 @@ impl Config {
         }
     }
 
-    pub fn save_wechat_credentials(
+    pub fn save_credentials(
         &self,
         appid: String,
         secret: String,
+        md2wechat_api_key: String,
     ) -> Result<(), ConfigError> {
         let mut file_cfg = FileConfig::load_from_disk().unwrap_or_default();
         file_cfg.wechat_appid = Some(appid);
         file_cfg.wechat_secret = Some(secret);
+        file_cfg.md2wechat_api_key = Some(md2wechat_api_key);
         file_cfg.save_to_disk()
     }
 
