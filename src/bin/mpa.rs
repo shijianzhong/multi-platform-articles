@@ -2,7 +2,7 @@ use mpa_core::converter::{ConvertMode, ConvertRequest, MarkdownConverter};
 use mpa_core::platforms::wechat::WechatPublisher;
 use mpa_core::platforms::{DraftArticle, Publisher};
 use mpa_core::{tui, ApiConfig, Config, ThemeManager};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -14,6 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cmd = args.remove(0);
     match cmd.as_str() {
+        "install" => install_cmd(args),
         "tui" => {
             tui::run()?;
             Ok(())
@@ -26,6 +27,136 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(2);
         }
     }
+}
+
+fn install_cmd(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut install_dir: Option<PathBuf> = None;
+    let mut install_skill = true;
+    let mut update_path = true;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--dir" => {
+                i += 1;
+                install_dir = Some(PathBuf::from(args.get(i).ok_or("missing --dir value")?));
+            }
+            "--no-skill" => install_skill = false,
+            "--no-path" => update_path = false,
+            other => return Err(format!("unknown arg: {other}").into()),
+        }
+        i += 1;
+    }
+
+    let exe = std::env::current_exe()?;
+    let default_dir = default_install_dir();
+    let install_dir = install_dir.unwrap_or(default_dir);
+    std::fs::create_dir_all(&install_dir)?;
+
+    let target = install_dir.join(exe.file_name().ok_or("invalid current exe")?);
+    std::fs::copy(&exe, &target)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perm = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(&target, perm)?;
+    }
+
+    println!("Installed binary: {}", target.display());
+
+    if update_path {
+        if let Err(err) = ensure_path_contains(&install_dir) {
+            eprintln!("PATH update skipped: {err}");
+        }
+    }
+
+    if install_skill {
+        match install_skill_folder("multi-platform-articles") {
+            Ok(Some(path)) => println!("Installed skill: {}", path.display()),
+            Ok(None) => eprintln!("Skill not found in package; install from ClawHub/Trae instead."),
+            Err(err) => eprintln!("Skill install skipped: {err}"),
+        }
+    }
+
+    println!("Next: run `mpa` to open TUI and configure WECHAT_APPID/WECHAT_SECRET");
+    Ok(())
+}
+
+fn default_install_dir() -> PathBuf {
+    if cfg!(windows) {
+        if let Ok(home) = std::env::var("USERPROFILE") {
+            return PathBuf::from(home).join(".local").join("bin");
+        }
+        PathBuf::from(".")
+    } else {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home).join(".local").join("bin");
+        }
+        PathBuf::from(".")
+    }
+}
+
+fn ensure_path_contains(install_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let path = std::env::var("PATH").unwrap_or_default();
+    let install_dir_str = install_dir.to_string_lossy();
+    if path.split(':').any(|p| p == install_dir_str) {
+        return Ok(());
+    }
+
+    let home = std::env::var("HOME").map(PathBuf::from)?;
+    let shell = std::env::var("SHELL").unwrap_or_default();
+    let rc = if shell.contains("zsh") {
+        home.join(".zshrc")
+    } else if shell.contains("bash") {
+        home.join(".bashrc")
+    } else {
+        return Err(format!(
+            "unknown shell; add {} to PATH manually",
+            install_dir.display()
+        )
+        .into());
+    };
+
+    let export_line = format!(r#"export PATH="{}:$PATH""#, install_dir_str);
+    let existing = std::fs::read_to_string(&rc).unwrap_or_default();
+    if !existing.contains(&export_line) {
+        let mut out = existing;
+        if !out.ends_with('\n') && !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&export_line);
+        out.push('\n');
+        std::fs::write(&rc, out)?;
+        println!("Updated shell rc: {}", rc.display());
+        println!("Reload: source {}", rc.display());
+    }
+    Ok(())
+}
+
+fn install_skill_folder(skill_name: &str) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    let exe = std::env::current_exe()?;
+    let exe_dir = exe.parent().ok_or("invalid current exe dir")?;
+    let candidate = exe_dir
+        .join(".trae")
+        .join("skills")
+        .join(skill_name)
+        .join("SKILL.md");
+    if !candidate.exists() {
+        return Ok(None);
+    }
+
+    let base = if cfg!(windows) {
+        let home = std::env::var("USERPROFILE").map(PathBuf::from)?;
+        home.join(".trae")
+    } else {
+        let home = std::env::var("HOME").map(PathBuf::from)?;
+        home.join(".trae")
+    };
+    let dest_dir = base.join("skills").join(skill_name);
+    std::fs::create_dir_all(&dest_dir)?;
+    std::fs::copy(&candidate, dest_dir.join("SKILL.md"))?;
+    Ok(Some(dest_dir))
 }
 
 fn themes_cmd(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
