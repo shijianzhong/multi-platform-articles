@@ -6,8 +6,13 @@ VERSION="${MPA_VERSION:-}"
 INSTALL_DIR="${MPA_INSTALL_DIR:-$HOME/.local/bin}"
 
 if [ -z "$VERSION" ]; then
-  echo "MPA_VERSION is required (e.g. v0.1.2)" >&2
-  exit 2
+  echo "MPA_VERSION not set, fetching latest release version..."
+  VERSION=$(curl -fsSL https://api.github.com/repos/${REPO}/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+  if [ -z "$VERSION" ]; then
+    echo "Failed to fetch latest version" >&2
+    exit 2
+  fi
+  echo "Latest version: $VERSION"
 fi
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -45,7 +50,19 @@ if [ -z "$bin_path" ]; then
   exit 2
 fi
 
-install -m 0755 "$bin_path" "$INSTALL_DIR/mpa"
-echo "Installed: $INSTALL_DIR/mpa"
+skill_dir="$(find "$tmp" -type d -name 'multi-platform-articles' -maxdepth 5 | head -n 1 || true)"
+if [ -n "$skill_dir" ]; then
+  echo "Found skill directory at $skill_dir"
+  # Let mpa install command handle the skill directory copy
+  cd "$(dirname "$bin_path")"
+else
+  cd "$(dirname "$bin_path")"
+fi
+
+chmod +x "$bin_path"
+echo "Running mpa install command..."
+"$bin_path" install
+
+echo "Installation complete!"
 echo "Run: mpa themes list"
 echo "Config: run 'mpa' to open TUI and set WECHAT_APPID/WECHAT_SECRET"

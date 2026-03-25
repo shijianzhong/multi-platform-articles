@@ -5,8 +5,16 @@ $Version = $env:MPA_VERSION
 $InstallDir = if ($env:MPA_INSTALL_DIR) { $env:MPA_INSTALL_DIR } else { Join-Path $env:USERPROFILE ".local\\bin" }
 
 if (-not $Version) {
-  Write-Error "MPA_VERSION is required (e.g. v0.1.2)"
-  exit 2
+  Write-Host "MPA_VERSION not set, fetching latest release version..."
+  $ReleaseUrl = "https://api.github.com/repos/$Repo/releases/latest"
+  try {
+    $ReleaseData = Invoke-RestMethod -Uri $ReleaseUrl -UseBasicParsing
+    $Version = $ReleaseData.tag_name
+  } catch {
+    Write-Error "Failed to fetch latest version"
+    exit 2
+  }
+  Write-Host "Latest version: $Version"
 }
 
 $Target = "x86_64-pc-windows-msvc"
@@ -30,8 +38,12 @@ try {
     exit 2
   }
 
-  Copy-Item $Bin.FullName (Join-Path $InstallDir "mpa.exe") -Force
-  Write-Host "Installed: $(Join-Path $InstallDir 'mpa.exe')"
+  $BinDir = Split-Path $Bin.FullName
+  Set-Location -Path $BinDir
+  Write-Host "Running mpa install command..."
+  & $Bin.FullName install
+
+  Write-Host "Installation complete!"
   Write-Host "Run: mpa themes list"
   Write-Host "Config: run 'mpa' to open TUI and set WECHAT_APPID/WECHAT_SECRET"
 } finally {
