@@ -78,12 +78,22 @@ pub fn run() -> Result<(), io::Error> {
                     match key.code {
                         KeyCode::Esc | KeyCode::Char('q') => return Ok(()),
                         KeyCode::Left => {
-                            state.tab = Tab::WeChat;
-                            state.field = Field::AppId;
+                            if state.field == Field::ImageProvider {
+                                state.image_provider = cycle_provider(&state.image_provider, -1);
+                                state.dirty = true;
+                            } else {
+                                state.tab = Tab::WeChat;
+                                state.field = Field::AppId;
+                            }
                         }
                         KeyCode::Right => {
-                            state.tab = Tab::Image;
-                            state.field = Field::ImageProvider;
+                            if state.field == Field::ImageProvider {
+                                state.image_provider = cycle_provider(&state.image_provider, 1);
+                                state.dirty = true;
+                            } else {
+                                state.tab = Tab::Image;
+                                state.field = Field::ImageProvider;
+                            }
                         }
                         KeyCode::Tab => {
                             state.field = match state.tab {
@@ -132,7 +142,22 @@ pub fn run() -> Result<(), io::Error> {
                             }
                         }
                         KeyCode::Char('r') => {
-                            state.reveal_secret = !state.reveal_secret;
+                            if state.field == Field::Secret {
+                                state.reveal_secret = !state.reveal_secret;
+                            } else {
+                                let target = match state.field {
+                                    Field::AppId => Some(&mut state.appid),
+                                    Field::ImageApiKey => Some(&mut state.image_api_key),
+                                    Field::ImageApiBase => Some(&mut state.image_api_base),
+                                    Field::ImageModel => Some(&mut state.image_model),
+                                    Field::ImageSize => Some(&mut state.image_size),
+                                    Field::ImageProvider | Field::Secret => None,
+                                };
+                                if let Some(target) = target {
+                                    target.push('r');
+                                    state.dirty = true;
+                                }
+                            }
                         }
                         KeyCode::Char('s') => match save_state(&state) {
                             Ok(()) => {
@@ -149,29 +174,35 @@ pub fn run() -> Result<(), io::Error> {
                         },
                         KeyCode::Backspace => {
                             let target = match state.field {
-                                Field::AppId => &mut state.appid,
-                                Field::Secret => &mut state.secret,
-                                Field::ImageProvider => &mut state.image_provider,
-                                Field::ImageApiKey => &mut state.image_api_key,
-                                Field::ImageApiBase => &mut state.image_api_base,
-                                Field::ImageModel => &mut state.image_model,
-                                Field::ImageSize => &mut state.image_size,
+                                Field::AppId => Some(&mut state.appid),
+                                Field::Secret => Some(&mut state.secret),
+                                Field::ImageApiKey => Some(&mut state.image_api_key),
+                                Field::ImageApiBase => Some(&mut state.image_api_base),
+                                Field::ImageModel => Some(&mut state.image_model),
+                                Field::ImageSize => Some(&mut state.image_size),
+                                Field::ImageProvider => None, // 不允许直接编辑
                             };
-                            target.pop();
-                            state.dirty = true;
+                            if let Some(target) = target {
+                                target.pop();
+                                state.dirty = true;
+                            }
                         }
                         KeyCode::Char(c) => {
-                            let target = match state.field {
-                                Field::AppId => &mut state.appid,
-                                Field::Secret => &mut state.secret,
-                                Field::ImageProvider => &mut state.image_provider,
-                                Field::ImageApiKey => &mut state.image_api_key,
-                                Field::ImageApiBase => &mut state.image_api_base,
-                                Field::ImageModel => &mut state.image_model,
-                                Field::ImageSize => &mut state.image_size,
-                            };
-                            target.push(c);
-                            state.dirty = true;
+                            if c != 'r' {
+                                let target = match state.field {
+                                    Field::AppId => Some(&mut state.appid),
+                                    Field::Secret => Some(&mut state.secret),
+                                    Field::ImageApiKey => Some(&mut state.image_api_key),
+                                    Field::ImageApiBase => Some(&mut state.image_api_base),
+                                    Field::ImageModel => Some(&mut state.image_model),
+                                    Field::ImageSize => Some(&mut state.image_size),
+                                    Field::ImageProvider => None, // 不允许直接编辑
+                                };
+                                if let Some(target) = target {
+                                    target.push(c);
+                                    state.dirty = true;
+                                }
+                            }
                         }
                         _ => {}
                     }
@@ -184,6 +215,16 @@ pub fn run() -> Result<(), io::Error> {
     let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
     let _ = terminal.show_cursor();
     result
+}
+
+fn cycle_provider(current: &str, dir: i32) -> String {
+    let providers = ["openai", "modelscope", "tuzi", "openrouter", "gemini"];
+    let current_idx = providers
+        .iter()
+        .position(|&p| p == current)
+        .unwrap_or(0) as i32;
+    let next_idx = (current_idx + dir).rem_euclid(providers.len() as i32) as usize;
+    providers[next_idx].to_string()
 }
 
 fn load_state() -> State {
@@ -199,6 +240,8 @@ fn load_state() -> State {
     }
     if let Some(p) = cfg.image.provider {
         state.image_provider = p;
+    } else {
+        state.image_provider = "openai".to_string(); // 默认值
     }
     if let Some(k) = cfg.image.api_key {
         state.image_api_key = k;
@@ -351,9 +394,13 @@ fn draw(f: &mut Frame, state: &State) {
                 "IMAGE_PROVIDER (openai/tuzi/modelscope/openrouter/gemini)".to_string()
             };
             let text = if state.image_provider.is_empty() {
-                Text::from(Line::styled("在此输入配图服务商…", dim))
+                Text::from(Line::styled("使用左右方向键切换服务商...", dim))
             } else {
-                Text::from(state.image_provider.as_str())
+                Text::from(Line::from(vec![
+                    Span::styled("◄ ", dim),
+                    Span::styled(state.image_provider.as_str(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(" ►", dim),
+                ]))
             };
             fields.push((title, text, Field::ImageProvider));
 
@@ -420,7 +467,7 @@ fn draw(f: &mut Frame, state: &State) {
         } else {
             inactive_border
         };
-        let p = Paragraph::new(text)
+        let mut p = Paragraph::new(text)
             .block(
                 Block::default()
                     .title(title)
@@ -429,6 +476,9 @@ fn draw(f: &mut Frame, state: &State) {
                     .border_style(border),
             )
             .style(Style::default().fg(Color::White));
+        if field == Field::ImageProvider {
+            p = p.alignment(Alignment::Center);
+        }
         f.render_widget(p, body[i]);
     }
 
