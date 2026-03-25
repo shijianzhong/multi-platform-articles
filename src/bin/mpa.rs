@@ -1,19 +1,23 @@
 use mpa_core::converter::{ConvertMode, ConvertRequest, MarkdownConverter};
 use mpa_core::platforms::wechat::WechatPublisher;
 use mpa_core::platforms::{DraftArticle, Publisher};
-use mpa_core::{ApiConfig, Config, ThemeManager};
+use mpa_core::{tui, ApiConfig, Config, ThemeManager};
 use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() {
-        eprintln!("usage: mpa <themes|convert|publish> ...");
-        std::process::exit(2);
+        tui::run()?;
+        return Ok(());
     }
 
     let cmd = args.remove(0);
     match cmd.as_str() {
+        "tui" => {
+            tui::run()?;
+            Ok(())
+        }
         "themes" => themes_cmd(args),
         "convert" => convert_cmd(args).await,
         "publish" => publish_cmd(args).await,
@@ -103,7 +107,7 @@ async fn convert_cmd(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>
     }
 
     let markdown = std::fs::read_to_string(&input)?;
-    let cfg = Config::from_env();
+    let cfg = Config::load();
     let themes = ThemeManager::new();
     let converter = MarkdownConverter::new(
         ApiConfig {
@@ -187,8 +191,10 @@ async fn publish_wechat_draft(args: Vec<String>) -> Result<(), Box<dyn std::erro
         i += 1;
     }
 
-    let cfg = Config::from_env();
-    let wechat_cfg = cfg.wechat.ok_or("missing WECHAT_APPID/WECHAT_SECRET")?;
+    let cfg = Config::load();
+    let wechat_cfg = cfg
+        .wechat
+        .ok_or("missing WECHAT_APPID/WECHAT_SECRET (or configure in mpa tui)")?;
     let publisher = WechatPublisher::new(wechat_cfg)?;
 
     let cover_path = cover.ok_or("missing --cover")?;

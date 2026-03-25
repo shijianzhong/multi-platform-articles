@@ -3,6 +3,7 @@ pub mod converter;
 pub mod platforms;
 pub mod publish;
 pub mod theme;
+pub mod tui;
 
 pub use config::{ApiConfig, Config, WechatConfig};
 pub use converter::{

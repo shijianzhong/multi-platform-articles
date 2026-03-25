@@ -5,7 +5,7 @@ $Version = $env:MPA_VERSION
 $InstallDir = if ($env:MPA_INSTALL_DIR) { $env:MPA_INSTALL_DIR } else { Join-Path $env:USERPROFILE ".local\\bin" }
 
 if (-not $Version) {
-  Write-Error "MPA_VERSION is required (e.g. v0.1.0)"
+  Write-Error "MPA_VERSION is required (e.g. v0.1.1)"
   exit 2
 }
 
@@ -33,6 +33,7 @@ try {
   Copy-Item $Bin.FullName (Join-Path $InstallDir "mpa.exe") -Force
   Write-Host "Installed: $(Join-Path $InstallDir 'mpa.exe')"
   Write-Host "Run: mpa themes list"
+  Write-Host "Config: run 'mpa' to open TUI and set WECHAT_APPID/WECHAT_SECRET"
 } finally {
   Remove-Item -Recurse -Force $Tmp.FullName | Out-Null
 }

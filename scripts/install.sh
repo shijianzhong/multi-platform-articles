@@ -6,7 +6,7 @@ VERSION="${MPA_VERSION:-}"
 INSTALL_DIR="${MPA_INSTALL_DIR:-$HOME/.local/bin}"
 
 if [ -z "$VERSION" ]; then
-  echo "MPA_VERSION is required (e.g. v0.1.0)" >&2
+  echo "MPA_VERSION is required (e.g. v0.1.1)" >&2
   exit 2
 fi
 
@@ -48,3 +48,4 @@ fi
 install -m 0755 "$bin_path" "$INSTALL_DIR/mpa"
 echo "Installed: $INSTALL_DIR/mpa"
 echo "Run: mpa themes list"
+echo "Config: run 'mpa' to open TUI and set WECHAT_APPID/WECHAT_SECRET"
