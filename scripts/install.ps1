@@ -5,7 +5,7 @@ $Version = $env:MPA_VERSION
 $InstallDir = if ($env:MPA_INSTALL_DIR) { $env:MPA_INSTALL_DIR } else { Join-Path $env:USERPROFILE ".local\\bin" }
 
 if (-not $Version) {
-  Write-Error "MPA_VERSION is required (e.g. v0.1.1)"
+  Write-Error "MPA_VERSION is required (e.g. v0.1.2)"
   exit 2
 }
 

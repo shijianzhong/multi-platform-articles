@@ -6,7 +6,7 @@ VERSION="${MPA_VERSION:-}"
 INSTALL_DIR="${MPA_INSTALL_DIR:-$HOME/.local/bin}"
 
 if [ -z "$VERSION" ]; then
-  echo "MPA_VERSION is required (e.g. v0.1.1)" >&2
+  echo "MPA_VERSION is required (e.g. v0.1.2)" >&2
   exit 2
 fi
 
