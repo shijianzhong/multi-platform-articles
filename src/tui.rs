@@ -81,7 +81,9 @@ pub fn run() -> Result<(), io::Error> {
                             if state.field == Field::ImageProvider {
                                 state.image_provider = cycle_provider(&state.image_provider, -1);
                                 state.dirty = true;
+                                maybe_autosave(&mut state);
                             } else {
+                                maybe_autosave(&mut state);
                                 state.tab = Tab::WeChat;
                                 state.field = Field::AppId;
                             }
@@ -90,12 +92,15 @@ pub fn run() -> Result<(), io::Error> {
                             if state.field == Field::ImageProvider {
                                 state.image_provider = cycle_provider(&state.image_provider, 1);
                                 state.dirty = true;
+                                maybe_autosave(&mut state);
                             } else {
+                                maybe_autosave(&mut state);
                                 state.tab = Tab::Image;
                                 state.field = Field::ImageProvider;
                             }
                         }
                         KeyCode::Tab => {
+                            maybe_autosave(&mut state);
                             state.field = match state.tab {
                                 Tab::WeChat => match state.field {
                                     Field::AppId => Field::Secret,
@@ -111,6 +116,7 @@ pub fn run() -> Result<(), io::Error> {
                             }
                         }
                         KeyCode::Up => {
+                            maybe_autosave(&mut state);
                             state.field = match state.tab {
                                 Tab::WeChat => match state.field {
                                     Field::Secret => Field::AppId,
@@ -127,6 +133,7 @@ pub fn run() -> Result<(), io::Error> {
                             }
                         }
                         KeyCode::Down => {
+                            maybe_autosave(&mut state);
                             state.field = match state.tab {
                                 Tab::WeChat => match state.field {
                                     Field::AppId => Field::Secret,
@@ -141,37 +148,26 @@ pub fn run() -> Result<(), io::Error> {
                                 },
                             }
                         }
-                        KeyCode::Char('r') => {
-                            if state.field == Field::Secret {
-                                state.reveal_secret = !state.reveal_secret;
-                            } else {
-                                let target = match state.field {
-                                    Field::AppId => Some(&mut state.appid),
-                                    Field::ImageApiKey => Some(&mut state.image_api_key),
-                                    Field::ImageApiBase => Some(&mut state.image_api_base),
-                                    Field::ImageModel => Some(&mut state.image_model),
-                                    Field::ImageSize => Some(&mut state.image_size),
-                                    Field::ImageProvider | Field::Secret => None,
-                                };
-                                if let Some(target) = target {
-                                    target.push('r');
-                                    state.dirty = true;
+                        KeyCode::Char('s') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                            match save_state(&state) {
+                                Ok(()) => {
+                                    state.dirty = false;
+                                    state.message = Some((
+                                        "已保存到本机配置文件（环境变量会覆盖该配置）".to_string(),
+                                        MessageKind::Success,
+                                    ));
+                                }
+                                Err(err) => {
+                                    state.message =
+                                        Some((format!("保存失败：{err}"), MessageKind::Error));
                                 }
                             }
                         }
-                        KeyCode::Char('s') => match save_state(&state) {
-                            Ok(()) => {
-                                state.dirty = false;
-                                state.message = Some((
-                                    "已保存到本机配置文件（环境变量会覆盖该配置）".to_string(),
-                                    MessageKind::Success,
-                                ));
+                        KeyCode::Char('r') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                            if state.field == Field::Secret {
+                                state.reveal_secret = !state.reveal_secret;
                             }
-                            Err(err) => {
-                                state.message =
-                                    Some((format!("保存失败：{err}"), MessageKind::Error));
-                            }
-                        },
+                        }
                         KeyCode::Backspace => {
                             let target = match state.field {
                                 Field::AppId => Some(&mut state.appid),
@@ -180,7 +176,7 @@ pub fn run() -> Result<(), io::Error> {
                                 Field::ImageApiBase => Some(&mut state.image_api_base),
                                 Field::ImageModel => Some(&mut state.image_model),
                                 Field::ImageSize => Some(&mut state.image_size),
-                                Field::ImageProvider => None, // 不允许直接编辑
+                                Field::ImageProvider => None,
                             };
                             if let Some(target) = target {
                                 target.pop();
@@ -188,20 +184,18 @@ pub fn run() -> Result<(), io::Error> {
                             }
                         }
                         KeyCode::Char(c) => {
-                            if c != 'r' {
-                                let target = match state.field {
-                                    Field::AppId => Some(&mut state.appid),
-                                    Field::Secret => Some(&mut state.secret),
-                                    Field::ImageApiKey => Some(&mut state.image_api_key),
-                                    Field::ImageApiBase => Some(&mut state.image_api_base),
-                                    Field::ImageModel => Some(&mut state.image_model),
-                                    Field::ImageSize => Some(&mut state.image_size),
-                                    Field::ImageProvider => None, // 不允许直接编辑
-                                };
-                                if let Some(target) = target {
-                                    target.push(c);
-                                    state.dirty = true;
-                                }
+                            let target = match state.field {
+                                Field::AppId => Some(&mut state.appid),
+                                Field::Secret => Some(&mut state.secret),
+                                Field::ImageApiKey => Some(&mut state.image_api_key),
+                                Field::ImageApiBase => Some(&mut state.image_api_base),
+                                Field::ImageModel => Some(&mut state.image_model),
+                                Field::ImageSize => Some(&mut state.image_size),
+                                Field::ImageProvider => None,
+                            };
+                            if let Some(target) = target {
+                                target.push(c);
+                                state.dirty = true;
                             }
                         }
                         _ => {}
@@ -227,6 +221,21 @@ fn cycle_provider(current: &str, dir: i32) -> String {
     providers[next_idx].to_string()
 }
 
+fn maybe_autosave(state: &mut State) {
+    if !state.dirty {
+        return;
+    }
+    match save_state(state) {
+        Ok(()) => {
+            state.dirty = false;
+            state.message = Some(("已自动保存".to_string(), MessageKind::Success));
+        }
+        Err(err) => {
+            state.message = Some((format!("自动保存失败：{err}"), MessageKind::Error));
+        }
+    }
+}
+
 fn load_state() -> State {
     let cfg = Config::load();
     let mut state = State {
@@ -241,7 +250,7 @@ fn load_state() -> State {
     if let Some(p) = cfg.image.provider {
         state.image_provider = p;
     } else {
-        state.image_provider = "openai".to_string(); // 默认值
+        state.image_provider = "openai".to_string();
     }
     if let Some(k) = cfg.image.api_key {
         state.image_api_key = k;
@@ -385,7 +394,7 @@ fn draw(f: &mut Frame, state: &State) {
             } else {
                 Text::from("•".repeat(state.secret.chars().count()))
             };
-            fields.push((format!("{title}  (r 显示/隐藏)"), text, Field::Secret));
+            fields.push((format!("{title}  (Ctrl+r 显示/隐藏)"), text, Field::Secret));
         }
         Tab::Image => {
             let title = if state.env_override_image_provider {
@@ -484,13 +493,15 @@ fn draw(f: &mut Frame, state: &State) {
 
     let hints = vec![
         Span::styled("Tab/↑↓", Style::default().fg(Color::Cyan)),
-        Span::raw(" 切换  "),
+        Span::raw(" 切换(自动保存)  "),
         Span::styled("←/→", Style::default().fg(Color::Cyan)),
-        Span::raw(" 分页  "),
+        Span::raw(" 分页(自动保存)  "),
         Span::styled("输入/Backspace", Style::default().fg(Color::Cyan)),
         Span::raw(" 编辑  "),
-        Span::styled("s", Style::default().fg(Color::Cyan)),
-        Span::raw(" 保存  "),
+        Span::styled("Ctrl+s", Style::default().fg(Color::Cyan)),
+        Span::raw(" 强制保存  "),
+        Span::styled("Ctrl+r", Style::default().fg(Color::Cyan)),
+        Span::raw(" 显示/隐藏Secret  "),
         Span::styled("q/Esc", Style::default().fg(Color::Cyan)),
         Span::raw(" 退出"),
     ];

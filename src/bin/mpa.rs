@@ -16,6 +16,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cmd = args.remove(0);
     match cmd.as_str() {
+        "--help" | "-h" | "help" => {
+            print_help();
+            Ok(())
+        }
         "--version" | "-V" | "-v" => {
             println!("mpa {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -30,9 +34,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "publish" => publish_cmd(args).await,
         _ => {
             eprintln!("unknown command: {cmd}");
+            print_help();
             std::process::exit(2);
         }
     }
+}
+
+fn print_help() {
+    println!(
+        r#"mpa - Multi-Platform Articles
+
+Usage:
+  mpa                 Open TUI
+  mpa tui             Open TUI
+  mpa --version       Print version
+  mpa --help          Print this help
+
+Commands:
+  install             Install binary and (optionally) skill
+  themes              List/show themes
+  convert             Convert markdown to HTML
+  publish             Publish to platforms (wechat-draft supported)
+
+Examples:
+  mpa themes list
+  mpa convert article.md --mode local --theme github-readme -o out.html
+  mpa publish wechat-draft --md article.md --cover cover.jpg --mode local --theme github-readme
+"#
+    );
 }
 
 fn install_cmd(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
@@ -79,7 +108,10 @@ fn install_cmd(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
 
     if install_skill {
         match install_skill_folder("multi-platform-articles") {
-            Ok(Some(path)) => println!("Installed skill: {}", path.display()),
+            Ok(Some(path)) => {
+                println!("Installed skill for Trae: {}", path.display());
+                println!("Note: If you use Cursor, skill was also copied to ~/.cursor/skills/ if the directory exists.");
+            },
             Ok(None) => eprintln!("Skill not found in package; install from ClawHub/Trae instead."),
             Err(err) => eprintln!("Skill install skipped: {err}"),
         }
@@ -162,6 +194,21 @@ fn install_skill_folder(skill_name: &str) -> Result<Option<PathBuf>, Box<dyn std
     let dest_dir = base.join("skills").join(skill_name);
     std::fs::create_dir_all(&dest_dir)?;
     std::fs::copy(&candidate, dest_dir.join("SKILL.md"))?;
+
+    let cursor_base = if cfg!(windows) {
+        let home = std::env::var("USERPROFILE").map(PathBuf::from)?;
+        home.join(".cursor")
+    } else {
+        let home = std::env::var("HOME").map(PathBuf::from)?;
+        home.join(".cursor")
+    };
+    if cursor_base.exists() {
+        let cursor_dest_dir = cursor_base.join("skills").join(skill_name);
+        if std::fs::create_dir_all(&cursor_dest_dir).is_ok() {
+            let _ = std::fs::copy(&candidate, cursor_dest_dir.join("SKILL.md"));
+        }
+    }
+
     Ok(Some(dest_dir))
 }
 
