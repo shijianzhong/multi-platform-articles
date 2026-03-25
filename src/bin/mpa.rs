@@ -404,9 +404,10 @@ async fn publish_wechat_draft(args: Vec<String>) -> Result<(), Box<dyn std::erro
         .wechat
         .clone()
         .ok_or("missing WECHAT_APPID/WECHAT_SECRET (or configure in mpa tui)")?;
-    let publisher_cover = WechatPublisher::new(wechat_cfg.clone())?;
-    let publisher_assets = WechatPublisher::new(wechat_cfg.clone())?;
-    let publisher_draft = WechatPublisher::new(wechat_cfg)?;
+    let publisher = WechatPublisher::new(wechat_cfg)?;
+    let publisher_cover = publisher.clone();
+    let publisher_assets = publisher.clone();
+    let publisher_draft = publisher;
 
     let cover_path = cover.ok_or("missing --cover")?;
     let uploaded = publisher_cover.upload_image_file(&cover_path).await?;

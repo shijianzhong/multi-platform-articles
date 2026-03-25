@@ -5,19 +5,30 @@ use crate::config::WechatConfig;
 use async_trait::async_trait;
 use reqwest::multipart;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use std::path::Path;
+use tokio::sync::Mutex;
 use url::form_urlencoded;
 
 #[derive(Debug, Clone)]
 pub struct WechatPublisher {
     cfg: WechatConfig,
     http: reqwest::Client,
+    token_cache: Arc<Mutex<Option<CachedToken>>>,
 }
 
 impl WechatPublisher {
     pub fn new(cfg: WechatConfig) -> Result<Self, PublishError> {
-        let http = reqwest::Client::builder().build()?;
-        Ok(Self { cfg, http })
+        let http = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(60))
+            .build()?;
+        Ok(Self {
+            cfg,
+            http,
+            token_cache: Arc::new(Mutex::new(None)),
+        })
     }
 
     pub fn with_http_client(mut self, http: reqwest::Client) -> Self {
@@ -26,6 +37,15 @@ impl WechatPublisher {
     }
 
     async fn access_token(&self) -> Result<String, PublishError> {
+        {
+            let guard = self.token_cache.lock().await;
+            if let Some(cached) = guard.as_ref() {
+                if cached.expires_at > Instant::now() + Duration::from_secs(60) {
+                    return Ok(cached.token.clone());
+                }
+            }
+        }
+
         let appid = form_urlencoded::byte_serialize(self.cfg.appid.as_bytes()).collect::<String>();
         let secret =
             form_urlencoded::byte_serialize(self.cfg.secret.as_bytes()).collect::<String>();
@@ -58,9 +78,17 @@ impl WechatPublisher {
                 )));
             }
         }
-        parsed
+        let token = parsed
             .access_token
-            .ok_or_else(|| PublishError::Message("missing access_token".to_string()))
+            .ok_or_else(|| PublishError::Message("missing access_token".to_string()))?;
+
+        let expires_in = parsed.expires_in.unwrap_or(7200);
+        let mut guard = self.token_cache.lock().await;
+        *guard = Some(CachedToken {
+            token: token.clone(),
+            expires_at: Instant::now() + Duration::from_secs(expires_in),
+        });
+        Ok(token)
     }
 
     async fn create_draft_raw<T: Serialize>(&self, payload: &T) -> Result<String, PublishError> {
@@ -89,6 +117,52 @@ impl WechatPublisher {
             )));
         }
         Ok(parsed.media_id)
+    }
+
+    pub async fn upload_article_image_file(&self, path: &Path) -> Result<String, PublishError> {
+        let token = self.access_token().await?;
+        let file_name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("image.png")
+            .to_string();
+        let bytes = std::fs::read(path)?;
+
+        let url = format!("https://api.weixin.qq.com/cgi-bin/media/uploadimg?access_token={token}");
+        let part = multipart::Part::bytes(bytes).file_name(file_name);
+        let form = multipart::Form::new().part("media", part);
+        let resp = self.http.post(url).multipart(form).send().await?;
+        let status = resp.status();
+        let body = resp.bytes().await?;
+        if !status.is_success() {
+            return Err(PublishError::Message(format!(
+                "wechat uploadimg http status={} body={}",
+                status,
+                String::from_utf8_lossy(&body)
+            )));
+        }
+
+        let parsed: UploadImgResponse = serde_json::from_slice(&body).map_err(|err| {
+            PublishError::Message(format!(
+                "parse wechat uploadimg response: {err} body={}",
+                String::from_utf8_lossy(&body)
+            ))
+        })?;
+        if let Some(errcode) = parsed.errcode {
+            if errcode != 0 {
+                return Err(PublishError::Message(format!(
+                    "wechat api error: {} - {}",
+                    errcode,
+                    parsed.errmsg.unwrap_or_default()
+                )));
+            }
+        }
+
+        let url = parsed
+            .url
+            .filter(|u| !u.trim().is_empty())
+            .ok_or_else(|| PublishError::Message("missing wechat url from uploadimg".to_string()))?;
+        Ok(url)
     }
 }
 
@@ -204,8 +278,15 @@ impl Publisher for WechatPublisher {
 #[derive(Debug, Deserialize)]
 struct AccessTokenResponse {
     access_token: Option<String>,
+    expires_in: Option<u64>,
     errcode: Option<i64>,
     errmsg: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct CachedToken {
+    token: String,
+    expires_at: Instant,
 }
 
 #[derive(Debug, Serialize)]
@@ -266,6 +347,13 @@ struct DraftAddResponse {
 #[derive(Debug, Deserialize)]
 struct UploadResponse {
     media_id: Option<String>,
+    url: Option<String>,
+    errcode: Option<i64>,
+    errmsg: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UploadImgResponse {
     url: Option<String>,
     errcode: Option<i64>,
     errmsg: Option<String>,

@@ -86,6 +86,10 @@ where
 
             match result {
                 Ok(upload) => {
+                    if upload.wechat_url.trim().is_empty() {
+                        failures.push(format!("{i}:empty wechat url"));
+                        continue;
+                    }
                     output.assets[i].media_id = Some(upload.media_id);
                     output.assets[i].public_url = Some(upload.wechat_url);
                 }

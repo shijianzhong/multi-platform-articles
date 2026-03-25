@@ -1,10 +1,10 @@
 use crate::image::{provider_from_config, GeneratedImage};
 use crate::platforms::wechat::WechatPublisher;
-use crate::platforms::Publisher;
 use crate::publish::{AssetError, AssetProcessor, UploadResult};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
 
 #[derive(Clone)]
 pub struct WechatAssetProcessor {
@@ -60,14 +60,19 @@ impl WechatAssetProcessor {
     }
 
     async fn upload_path(&self, path: &Path) -> Result<UploadResult, AssetError> {
-        let uploaded = self
+        let url = self
             .publisher
-            .upload_image_file(path)
+            .upload_article_image_file(path)
             .await
             .map_err(|e| AssetError::Message(e.to_string()))?;
+        if url.trim().is_empty() {
+            return Err(AssetError::Message(
+                "wechat uploadimg returned empty url".to_string(),
+            ));
+        }
         Ok(UploadResult {
-            media_id: uploaded.media_id,
-            wechat_url: uploaded.url.unwrap_or_default(),
+            media_id: String::new(),
+            wechat_url: url,
         })
     }
 
