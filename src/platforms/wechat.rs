@@ -94,6 +94,9 @@ impl WechatPublisher {
     async fn create_draft_raw<T: Serialize>(&self, payload: &T) -> Result<String, PublishError> {
         let token = self.access_token().await?;
         let url = format!("https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}");
+        
+        // println!("Draft payload: {}", serde_json::to_string_pretty(payload).unwrap_or_default());
+        
         let resp = self.http.post(url).json(payload).send().await?;
         let status = resp.status();
         let body = resp.bytes().await?;
@@ -230,8 +233,8 @@ impl Publisher for WechatPublisher {
                     digest: a.digest,
                     content: a.content_html,
                     content_source_url: a.content_source_url,
-                    thumb_media_id: a.cover_media_id,
-                    show_cover_pic: Some(if a.show_cover_pic { 1 } else { 0 }),
+                    thumb_media_id: a.cover_media_id.clone(),
+                    show_cover_pic: Some(if a.show_cover_pic && a.cover_media_id.is_some() { 1 } else { 0 }),
                 })
                 .collect(),
         };
@@ -307,7 +310,7 @@ struct DraftArticlePayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     thumb_media_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    show_cover_pic: Option<i32>,
+    show_cover_pic: Option<u32>, // 微信 API 对此字段的要求可能比较严格
 }
 
 #[derive(Debug, Serialize)]
