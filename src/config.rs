@@ -6,6 +6,13 @@ use std::path::PathBuf;
 pub struct Config {
     pub wechat: Option<WechatConfig>,
     pub api: ApiConfig,
+    pub image: ImageConfig,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ImageConfig {
+    pub provider: Option<String>,
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -34,7 +41,7 @@ impl Config {
             .filter(|v| !v.trim().is_empty())
             .or_else(|| file_cfg.md2wechat_api_key.clone());
 
-        let wechat_appid = env::var("WECHAT_APPID")
+        let md2wechat_appid = env::var("WECHAT_APPID")
             .ok()
             .filter(|v| !v.trim().is_empty())
             .or_else(|| file_cfg.wechat_appid.clone());
@@ -42,16 +49,29 @@ impl Config {
             .ok()
             .filter(|v| !v.trim().is_empty())
             .or_else(|| file_cfg.wechat_secret.clone());
-        let wechat = match (wechat_appid, wechat_secret) {
+        let wechat = match (md2wechat_appid, wechat_secret) {
             (Some(appid), Some(secret)) => Some(WechatConfig { appid, secret }),
             _ => None,
         };
+
+        let image_provider = env::var("IMAGE_PROVIDER")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| file_cfg.image_provider.clone());
+        let image_api_key = env::var("IMAGE_API_KEY")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| file_cfg.image_api_key.clone());
 
         Self {
             wechat,
             api: ApiConfig {
                 md2wechat_api_key,
                 md2wechat_base_url,
+            },
+            image: ImageConfig {
+                provider: image_provider,
+                api_key: image_api_key,
             },
         }
     }
@@ -60,12 +80,14 @@ impl Config {
         &self,
         appid: String,
         secret: String,
-        md2wechat_api_key: String,
+        image_provider: String,
+        image_api_key: String,
     ) -> Result<(), ConfigError> {
         let mut file_cfg = FileConfig::load_from_disk().unwrap_or_default();
         file_cfg.wechat_appid = Some(appid);
         file_cfg.wechat_secret = Some(secret);
-        file_cfg.md2wechat_api_key = Some(md2wechat_api_key);
+        file_cfg.image_provider = Some(image_provider);
+        file_cfg.image_api_key = Some(image_api_key);
         file_cfg.save_to_disk()
     }
 
@@ -91,6 +113,8 @@ struct FileConfig {
     wechat_secret: Option<String>,
     md2wechat_api_key: Option<String>,
     md2wechat_base_url: Option<String>,
+    image_provider: Option<String>,
+    image_api_key: Option<String>,
 }
 
 impl FileConfig {
