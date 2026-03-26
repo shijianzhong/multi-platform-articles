@@ -864,28 +864,53 @@ fn apply_basic_inline_styles(html: &str, theme: &ResolvedTheme) -> String {
         .replace_all(&result, |cap: &regex::Captures| {
             let attrs = cap.get(1).map(|m| m.as_str()).unwrap_or("");
             let inner = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+            
+            // 清除所有的单独换行，这常常导致多余的空行
+            let inner_str = inner.replace("\n", "");
+            
+            // 首先清理完全空的 li
             let empty_li = Regex::new(r#"(?is)<li[^>]*>\s*</li>"#).expect("empty li regex");
-            let mut inner = empty_li.replace_all(inner, "").into_owned();
-            let li_open = Regex::new(r#"(?is)<li([^>]*)>"#).expect("li open regex");
-            inner = li_open
+            let mut inner = empty_li.replace_all(&inner_str, "").into_owned();
+            
+            // 匹配并替换 <li>...</li> 以便我们在内部正确插入符号和样式
+            // 我们不能简单地在 <li> 后面插入内容，因为微信可能对结构敏感。
+            // 更好的做法是，对于 <li> 的内容，如果是纯文本，直接包一层 span；如果有 p，确保 p 的 margin 为 0。
+            let li_block = Regex::new(r#"(?is)<li([^>]*)>(.*?)</li>"#).expect("li block regex");
+            inner = li_block
                 .replace_all(&inner, |c2: &regex::Captures| {
                     let li_attrs = c2.get(1).map(|m| m.as_str()).unwrap_or("");
+                    let li_content = c2.get(2).map(|m| m.as_str()).unwrap_or("");
                     let li_attrs_lower = li_attrs.to_ascii_lowercase();
-                    if li_attrs_lower.contains("style=") {
-                        format!(r#"<li{}><span style="color:{};font-weight:700;">●</span>&nbsp;"#, li_attrs, theme.primary)
+                    
+                    // 移除 li 内容中的换行符和多余空格，这经常导致微信出现空行
+                    let cleaned_content = li_content.trim();
+                    
+                    let style_attr = if li_attrs_lower.contains("style=") {
+                        li_attrs.to_string()
                     } else {
                         format!(
-                            r#"<li{} style="margin:6px 0;color:{};font-size:{};line-height:{};"><span style="color:{};font-weight:700;">●</span>&nbsp;"#,
-                            li_attrs, theme.text, theme.body_size, theme.line_height, theme.primary
+                            r#"{} style="margin:6px 0;padding-left:18px;position:relative;color:{};font-size:{};line-height:{};""#,
+                            li_attrs, theme.text, theme.body_size, theme.line_height
                         )
-                    }
+                    };
+                    
+                    // 我们使用一个简单的 span 而不是将符号直接放在内容前面，
+                    // 以免打乱微信对后续 <p> 的解析。
+                    // 并且我们移除了 span 的换行。
+                    format!(
+                        r#"<li{}><span style="position:absolute;left:0;top:0;color:{};font-weight:700;font-size:0.9em;line-height:{};">●</span>{}"#,
+                        style_attr, theme.primary, theme.line_height, cleaned_content
+                    )
                 })
                 .into_owned();
+                
             let li_p_margin = Regex::new(r#"(?is)<li([^>]*)>\s*<p style="margin:12px 0;"#)
                 .expect("li p margin regex");
             inner = li_p_margin
                 .replace_all(&inner, r#"<li$1><p style="margin:0;"#)
                 .into_owned();
+                
+            // 为了防止微信识别出多余的空行，我们还要将 </li> 标签后的换行去掉
             format!(
                 r#"<ul{} style="margin:12px 0;padding:0;list-style-type:none;">{}</ul>"#,
                 attrs, inner
