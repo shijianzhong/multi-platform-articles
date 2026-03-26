@@ -921,17 +921,20 @@ fn apply_basic_inline_styles(html: &str, theme: &ResolvedTheme) -> String {
                         li_attrs.to_string()
                     } else {
                         format!(
-                            r#"{} style="margin:6px 0;padding-left:18px;position:relative;color:{};font-size:{};line-height:{};""#,
+                            r#"{} style="margin:6px 0;color:{};font-size:{};line-height:{};""#,
                             li_attrs, theme.text, theme.body_size, theme.line_height
                         )
                     };
                     
-                    // 我们使用一个简单的 span 而不是将符号直接放在内容前面，
-                    // 以免打乱微信对后续 <p> 的解析。
-                    // 并且我们移除了 span 的换行。
+                    // 微信编辑器对 li 内部的块级或行内块级元素非常敏感。
+                    // 之前的 span 可能被微信解析成了导致换行的元素。
+                    // 现在的做法：完全不使用额外的标签（如 span），直接将符号作为普通文本拼接在内容最前面。
+                    // 为了保证符号和文字之间有间隔，我们用全角空格或者普通空格，并且直接应用原生的 color（因为无法单独给符号加颜色了，除非用极其安全的标签，但微信会折腾）。
+                    // 我们为了保证列表的颜色一致，使用一个没有任何 margin/padding 的纯内联 font 标签，或者干脆不用。
+                    // 最安全的微信列表方案：将符号和文本平铺。
                     format!(
-                        r#"<li{}><span style="position:absolute;left:0;top:0;color:{};font-weight:700;font-size:0.9em;line-height:{};">{}</span>{}"#,
-                        style_attr, theme.primary, theme.line_height, theme.list_marker, cleaned_content
+                        r#"<li{}><span style="color:{};font-weight:700;">{}</span> {}</li>"#,
+                        style_attr, theme.primary, theme.list_marker, cleaned_content
                     )
                 })
                 .into_owned();
@@ -942,7 +945,8 @@ fn apply_basic_inline_styles(html: &str, theme: &ResolvedTheme) -> String {
             inner = p_block
                 .replace_all(&inner, |c: &regex::Captures| {
                     let p_content = c.get(1).map(|m| m.as_str()).unwrap_or("");
-                    format!(r#"<span style="display:inline-block;">{}</span>"#, p_content.trim())
+                    // 微信连 span 都有可能解析出问题，我们直接返回纯文本（去掉外壳）
+                    p_content.trim().to_string()
                 })
                 .into_owned();
                 
@@ -964,6 +968,29 @@ fn apply_basic_inline_styles(html: &str, theme: &ResolvedTheme) -> String {
             ),
         )
         .into_owned();
+        
+    let ol_block = Regex::new(r#"(?is)<ol([^>]*)>(.*?)</ol>"#).expect("ol block regex");
+    result = ol_block
+        .replace_all(&result, |cap: &regex::Captures| {
+            let attrs = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+            let inner = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+            
+            // 清除所有的单独换行
+            let mut inner_str = inner.replace("\n", "");
+            
+            // 清除内部多余的 p 标签，微信对于带序号的 li 内部包 p 也会产生空行
+            let p_block = Regex::new(r#"(?is)<p[^>]*>(.*?)</p>"#).expect("p block regex");
+            inner_str = p_block
+                .replace_all(&inner_str, |c: &regex::Captures| {
+                    let p_content = c.get(1).map(|m| m.as_str()).unwrap_or("");
+                    p_content.trim().to_string()
+                })
+                .into_owned();
+                
+            format!(r#"<ol{}>{}</ol>"#, attrs, inner_str)
+        })
+        .into_owned();
+
     let li_p_margin = Regex::new(r#"(?is)<li([^>]*)>\s*<p style="margin:12px 0;"#)
         .expect("li p margin regex");
     result = li_p_margin
