@@ -799,6 +799,11 @@ fn apply_basic_inline_styles(html: &str, theme: &ResolvedTheme) -> String {
                     bg, radius
                 ));
             }
+        } else if level <= 3 {
+            style.push_str(&format!(
+                "background-color:{};padding:8px 12px;border-radius:12px;border-left:4px solid {};box-sizing:border-box;",
+                theme.quote_background, theme.primary
+            ));
         }
         let styled = format!(r#"<h{level} style="{style}">"#);
         result = result.replace(&open, &styled);
@@ -827,16 +832,84 @@ fn apply_basic_inline_styles(html: &str, theme: &ResolvedTheme) -> String {
         })
         .into_owned();
 
-    let code_block_open = Regex::new(r"(?i)<pre><code>").expect("pre code open regex");
+    let code_block_open =
+        Regex::new(r#"(?is)<pre><code([^>]*)>"#).expect("pre code open regex");
     result = code_block_open
+        .replace_all(&result, |cap: &regex::Captures| {
+            let attrs = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+            format!(
+                r#"<pre style="margin:16px 0;padding:12px 14px;background-color:{};border-radius:10px;overflow:auto;"><code data-mpa="codeblock"{} style="color:#e6edf3;font-size:13px;line-height:1.6;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;tab-size:2;">"#,
+                theme.code_background, attrs
+            )
+        })
+        .into_owned();
+
+    let code_open = Regex::new(r#"(?is)<code([^>]*)>"#).expect("code open regex");
+    result = code_open
+        .replace_all(&result, |cap: &regex::Captures| {
+            let attrs = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+            let attrs_lower = attrs.to_ascii_lowercase();
+            if attrs_lower.contains(r#"data-mpa="codeblock""#) || attrs_lower.contains("style=") {
+                return cap[0].to_string();
+            }
+            format!(
+                r#"<code{} style="background-color:{};color:{};padding:2px 6px;border-radius:8px;font-size:0.92em;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;">"#,
+                attrs, theme.quote_background, theme.primary
+            )
+        })
+        .into_owned();
+
+    let ul_block = Regex::new(r#"(?is)<ul([^>]*)>(.*?)</ul>"#).expect("ul block regex");
+    result = ul_block
+        .replace_all(&result, |cap: &regex::Captures| {
+            let attrs = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+            let inner = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+            let empty_li = Regex::new(r#"(?is)<li[^>]*>\s*</li>"#).expect("empty li regex");
+            let mut inner = empty_li.replace_all(inner, "").into_owned();
+            let li_open = Regex::new(r#"(?is)<li([^>]*)>"#).expect("li open regex");
+            inner = li_open
+                .replace_all(&inner, |c2: &regex::Captures| {
+                    let li_attrs = c2.get(1).map(|m| m.as_str()).unwrap_or("");
+                    let li_attrs_lower = li_attrs.to_ascii_lowercase();
+                    if li_attrs_lower.contains("style=") {
+                        format!(r#"<li{}><span style="color:{};font-weight:700;">●</span>&nbsp;"#, li_attrs, theme.primary)
+                    } else {
+                        format!(
+                            r#"<li{} style="margin:6px 0;color:{};font-size:{};line-height:{};"><span style="color:{};font-weight:700;">●</span>&nbsp;"#,
+                            li_attrs, theme.text, theme.body_size, theme.line_height, theme.primary
+                        )
+                    }
+                })
+                .into_owned();
+            let li_p_margin = Regex::new(r#"(?is)<li([^>]*)>\s*<p style="margin:12px 0;"#)
+                .expect("li p margin regex");
+            inner = li_p_margin
+                .replace_all(&inner, r#"<li$1><p style="margin:0;"#)
+                .into_owned();
+            format!(
+                r#"<ul{} style="margin:12px 0;padding:0;list-style-type:none;">{}</ul>"#,
+                attrs, inner
+            )
+        })
+        .into_owned();
+
+    let ol_open = Regex::new(r#"(?i)<ol>"#).expect("ol open regex");
+    result = ol_open
         .replace_all(
             &result,
             &format!(
-                r#"<pre style="margin:16px 0;padding:12px 14px;background-color:{};border-radius:10px;overflow:auto;"><code style="color:#e6edf3;font-size:13px;line-height:1.6;">"#,
-                theme.code_background
+                r#"<ol style="margin:12px 0;padding-left:22px;color:{};font-size:{};line-height:{};">"#,
+                theme.text, theme.body_size, theme.line_height
             ),
         )
         .into_owned();
+    let li_p_margin = Regex::new(r#"(?is)<li([^>]*)>\s*<p style="margin:12px 0;"#)
+        .expect("li p margin regex");
+    result = li_p_margin
+        .replace_all(&result, r#"<li$1><p style="margin:0;"#)
+        .into_owned();
+    let empty_li = Regex::new(r#"(?is)<li[^>]*>\s*</li>"#).expect("empty li regex");
+    result = empty_li.replace_all(&result, "").into_owned();
 
     let hr_pattern = Regex::new(r"(?i)<hr\s*/?>").expect("hr regex");
     result = hr_pattern
