@@ -440,7 +440,10 @@ pub fn insert_image_placeholders(html: &str, images: &[ImageRef]) -> String {
                 if re.is_match(&result) {
                     inserted.insert(img.index, true);
                 }
-                result = re
+                // 微信对于代码块前后的换行也很敏感，我们确保代码块外部不留换行
+    // 由于我们已经在整个 HTML 上去掉了换行，这里不需要额外操作了，上面的逻辑足够。
+    
+    result = re
                     .replace_all(&result, img.placeholder.as_str())
                     .into_owned();
             }
@@ -471,6 +474,29 @@ pub fn insert_image_placeholders(html: &str, images: &[ImageRef]) -> String {
                 placeholder.clone()
             })
             .into_owned();
+    }
+
+    // 最后的安全全局清理：把那些在标签之间的孤立换行和多余空格全部拿掉
+    // 微信极其容易将 \n 转换为空段落，我们必须将其压缩。
+    // 但是我们要保护 pre 块的内容
+    let mut protected_pres = Vec::new();
+    let pre_block = Regex::new(r#"(?is)(<pre[^>]*>.*?</pre>)"#).unwrap();
+    result = pre_block
+        .replace_all(&result, |cap: &regex::Captures| {
+            let pre_content = cap[1].to_string();
+            protected_pres.push(pre_content);
+            format!("__PRE_PLACEHOLDER_{}__", protected_pres.len() - 1)
+        })
+        .into_owned();
+
+    let empty_lines_between_tags = Regex::new(r">\s+<").expect("empty lines regex");
+    result = empty_lines_between_tags.replace_all(&result, "><").into_owned();
+    
+    // 同时也把文本和标签之间的无意义换行去掉，只要不涉及代码块和连续空格就可以
+    result = result.replace("\n", "");
+
+    for (i, pre_content) in protected_pres.iter().enumerate() {
+        result = result.replace(&format!("__PRE_PLACEHOLDER_{}__", i), pre_content);
     }
 
     result
