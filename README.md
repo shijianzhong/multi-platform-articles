@@ -1,6 +1,6 @@
 # Multi-Platform Articles (MPA)
 
-MPA 是一个将 Markdown 转换为带内置精美主题的 HTML，并可一键发布到微信公众号草稿箱（未来支持更多平台）的命令行工具。
+MPA 是一个将 Markdown 转换为带内置精美主题的 HTML，并可一键发布到微信公众号草稿箱的命令行工具。
 
 本项目内置 48 种排版主题，且完全支持本地渲染，无需依赖外部 API。
 
@@ -40,7 +40,7 @@ cd mpa-v0.1.3-x86_64-apple-darwin
 ./mpa install
 ```
 
-> **注意**：如果是 Windows，请在 PowerShell 中执行 `.\mpa.exe install`。
+> **注意**：由于平台 API 限制，目前发布功能专注于微信公众号，确保体验的稳定与一致。
 
 ---
 
