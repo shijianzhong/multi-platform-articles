@@ -576,6 +576,7 @@ struct ResolvedTheme {
     h1_size: String,
     h2_size: String,
     h3_size: String,
+    list_marker: String,
 }
 
 fn resolve_theme(theme: Option<&Theme>) -> ResolvedTheme {
@@ -662,6 +663,10 @@ fn resolve_theme(theme: Option<&Theme>) -> ResolvedTheme {
         .and_then(|d| d.background_texture.clone())
         .filter(|v| v != "none");
 
+    let list_marker = layout
+        .and_then(|l| l.list_marker.clone())
+        .unwrap_or_else(|| "●".to_string());
+
     ResolvedTheme {
         background,
         text,
@@ -689,6 +694,7 @@ fn resolve_theme(theme: Option<&Theme>) -> ResolvedTheme {
         h1_size,
         h2_size,
         h3_size,
+        list_marker,
     }
 }
 
@@ -898,16 +904,20 @@ fn apply_basic_inline_styles(html: &str, theme: &ResolvedTheme) -> String {
                     // 以免打乱微信对后续 <p> 的解析。
                     // 并且我们移除了 span 的换行。
                     format!(
-                        r#"<li{}><span style="position:absolute;left:0;top:0;color:{};font-weight:700;font-size:0.9em;line-height:{};">●</span>{}"#,
-                        style_attr, theme.primary, theme.line_height, cleaned_content
+                        r#"<li{}><span style="position:absolute;left:0;top:0;color:{};font-weight:700;font-size:0.9em;line-height:{};">{}</span>{}"#,
+                        style_attr, theme.primary, theme.line_height, theme.list_marker, cleaned_content
                     )
                 })
                 .into_owned();
                 
-            let li_p_margin = Regex::new(r#"(?is)<li([^>]*)>\s*<p style="margin:12px 0;"#)
-                .expect("li p margin regex");
-            inner = li_p_margin
-                .replace_all(&inner, r#"<li$1><p style="margin:0;"#)
+            // 对于 li 内部可能存在的 <p>，我们不再保留 <p> 标签（微信很容易在这上面折腾出换行）
+            // 我们将 <p> 转换为 span，或者直接去掉 <p> 的外壳
+            let p_block = Regex::new(r#"(?is)<p[^>]*>(.*?)</p>"#).expect("p block regex");
+            inner = p_block
+                .replace_all(&inner, |c: &regex::Captures| {
+                    let p_content = c.get(1).map(|m| m.as_str()).unwrap_or("");
+                    format!(r#"<span style="display:inline-block;">{}</span>"#, p_content.trim())
+                })
                 .into_owned();
                 
             // 为了防止微信识别出多余的空行，我们还要将 </li> 标签后的换行去掉

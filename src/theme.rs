@@ -76,6 +76,7 @@ pub struct Layout {
     pub container: Option<ContainerLayout>,
     pub card: Option<CardLayout>,
     pub decorations: Option<Decorations>,
+    pub list_marker: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

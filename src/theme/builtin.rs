@@ -18,14 +18,16 @@ fn base_themes() -> Vec<Theme> {
             palette("#faf9f5", "#4a413d", "#d97758", Some("#c06b4d"), Some("#fef4e7")),
             typography(None, None, None, None, Some(false), None),
             layout_container(Some("40px 10px"), Some("820px"), Some(true), None, None),
-        ),
+        )
+        .with_list_marker("●"),
         local(
             "bytedance",
             "科技 · 现代",
             palette("#f7f9fc", "#1f2328", "#1677ff", Some("#00b578"), Some("#eef5ff")),
             typography(None, None, None, Some("0.2px"), Some(false), None),
             layout_container(Some("40px 10px"), Some("860px"), Some(true), None, None),
-        ),
+        )
+        .with_list_marker("▪"),
         local(
             "apple",
             "视觉 · 渐变",
@@ -45,7 +47,8 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("26px"), Some("18px"))),
                 Some(decor("none")),
             ),
-        ),
+        )
+        .with_list_marker("○"),
         local(
             "sports",
             "活力 · 动感",
@@ -66,7 +69,8 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("22px"), Some("16px"))),
                 Some(decor("none")),
             ),
-        ),
+        )
+        .with_list_marker("►"),
         local(
             "chinese",
             "古典 · 雅致",
@@ -86,7 +90,8 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("24px"), Some("14px"))),
                 Some(decor("grid")),
             ),
-        ),
+        )
+        .with_list_marker("❖"),
         local(
             "cyber",
             "未来 · 霓虹 · 科技",
@@ -106,14 +111,16 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("22px"), Some("16px"))),
                 Some(decor("grid")),
             ),
-        ),
+        )
+        .with_list_marker("⚡"),
         local(
             "wechat-native",
             "原汁原味官方绿底纹",
             palette("#eaf5ea", "#1f3b1f", "#2f855a", Some("#16a34a"), Some("#def7e1")),
             typography(None, None, None, Some("0.2px"), Some(false), None),
             layout_container(Some("40px 10px"), Some("780px"), Some(true), None, Some(decor("grid"))),
-        ),
+        )
+        .with_list_marker("●"),
         local(
             "nyt-classic",
             "经典米黄色新闻纸",
@@ -133,7 +140,8 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("26px"), Some("10px"))),
                 Some(decor("lines")),
             ),
-        ),
+        )
+        .with_list_marker("■"),
         local(
             "github-readme",
             "README 即视感",
@@ -153,7 +161,8 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("22px"), Some("14px"))),
                 None,
             ),
-        ),
+        )
+        .with_list_marker("•"),
         local(
             "sspai-red",
             "数字媒体红色标识",
@@ -167,7 +176,8 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("24px"), Some("16px"))),
                 None,
             ),
-        ),
+        )
+        .with_list_marker("✦"),
         local(
             "mint-fresh",
             "清凉薄荷绿底色",
@@ -180,7 +190,8 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("22px"), Some("16px"))),
                 Some(decor("dot")),
             ),
-        ),
+        )
+        .with_list_marker("🌿"),
         local(
             "sunset-amber",
             "暖琥珀黄昏意境",
@@ -193,7 +204,8 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("24px"), Some("18px"))),
                 Some(decor("none")),
             ),
-        ),
+        )
+        .with_list_marker("-"),
         local(
             "ink-minimal",
             "黑白水墨极简阅读",
@@ -207,7 +219,8 @@ fn base_themes() -> Vec<Theme> {
                 Some("left"),
             ),
             layout_container(Some("40px 10px"), Some("760px"), Some(true), None, None),
-        ),
+        )
+        .with_list_marker("▪"),
         local(
             "paper-white",
             "纯白纸感",
@@ -220,7 +233,8 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("22px"), Some("14px"))),
                 None,
             ),
-        ),
+        )
+        .with_list_marker("○"),
         local(
             "midnight-dark",
             "午夜深色阅读",
@@ -233,7 +247,8 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("22px"), Some("16px"))),
                 None,
             ),
-        ),
+        )
+        .with_list_marker("✦"),
         local(
             "lavender-dream",
             "薰衣草梦幻",
@@ -246,7 +261,8 @@ fn base_themes() -> Vec<Theme> {
                 Some(card(Some(true), Some("24px"), Some("18px"))),
                 Some(decor("dot")),
             ),
-        ),
+        )
+        .with_list_marker("★"),
     ]
 }
 
@@ -389,6 +405,7 @@ fn layout_container(
         }),
         card,
         decorations,
+        list_marker: None,
     }
 }
 
@@ -444,5 +461,18 @@ fn local(
         layout: Some(layout),
         api_theme: None,
         prompt: None,
+    }
+}
+
+trait ThemeExt {
+    fn with_list_marker(self, marker: &str) -> Self;
+}
+
+impl ThemeExt for Theme {
+    fn with_list_marker(mut self, marker: &str) -> Self {
+        if let Some(layout) = &mut self.layout {
+            layout.list_marker = Some(marker.to_string());
+        }
+        self
     }
 }
