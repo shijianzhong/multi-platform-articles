@@ -9,12 +9,13 @@ pub struct Config {
     pub image: ImageConfig,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ImageConfig {
     pub provider: Option<String>,
     pub api_key: Option<String>,
     pub api_base: Option<String>,
     pub model: Option<String>,
+    #[serde(default = "Config::default_image_size")]
     pub size: Option<String>,
 }
 
@@ -31,6 +32,12 @@ pub struct WechatConfig {
 }
 
 impl Config {
+    pub fn default_image_size() -> Option<String> {
+        // 修改默认值为 1792x1024，比例接近 16:9 或 1.75:1，相比于 1:1 的 1024x1024
+        // 这在裁剪成公众号的 2.35:1 时被切掉的部分会少很多，保留更多的核心内容
+        Some("1792x1024".to_string())
+    }
+
     pub fn load() -> Self {
         let file_cfg = FileConfig::load_from_disk().unwrap_or_default();
 

@@ -75,6 +75,8 @@ pub fn run() -> Result<(), io::Error> {
                     if key.kind != KeyEventKind::Press {
                         continue;
                     }
+                    // 修复输入过滤逻辑，允许正常输入大写或小写的 R/S，不被拦截为保存快捷键
+                    // 此前的修改已将快捷键转移到 Ctrl+s / Ctrl+r，我们确保普通的字符可以输入
                     match key.code {
                         KeyCode::Esc | KeyCode::Char('q') => return Ok(()),
                         KeyCode::Left => {
@@ -263,6 +265,9 @@ fn load_state() -> State {
     }
     if let Some(v) = cfg.image.size {
         state.image_size = v;
+    } else {
+        // 默认设置为 1792x1024 (16:9)，更接近微信的 2.35:1，减少被上下裁切过多的问题
+        state.image_size = "1792x1024".to_string();
     }
     state.env_override_appid = std::env::var("WECHAT_APPID")
         .ok()
@@ -455,7 +460,7 @@ fn draw(f: &mut Frame, state: &State) {
                 "IMAGE_SIZE (可选，如 1024x1024)".to_string()
             };
             let text = if state.image_size.is_empty() {
-                Text::from(Line::styled("在此输入尺寸…", dim))
+                Text::from(Line::styled("例如 1792x1024 (更适合公众号封面比例)", dim))
             } else {
                 Text::from(state.image_size.as_str())
             };

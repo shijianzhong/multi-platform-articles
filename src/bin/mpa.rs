@@ -505,6 +505,8 @@ async fn publish_wechat_draft(args: Vec<String>) -> Result<(), Box<dyn std::erro
             digest,
             content_html,
             cover_media_id: Some(uploaded.media_id),
+            // 注意：我们依然设置 show_cover_pic 为 true。微信后台在生成草稿后，其实允许用户在草稿箱里手动点击封面去重新裁剪，但前提是原图分辨率必须能够覆盖所需框。
+            // 微信自动裁剪只会在发布或默认显示时发生。用户可以在草稿箱点进去手动裁。
             show_cover_pic: true,
             content_source_url: None,
         }])
