@@ -920,21 +920,21 @@ fn apply_basic_inline_styles(html: &str, theme: &ResolvedTheme) -> String {
                     let style_attr = if li_attrs_lower.contains("style=") {
                         li_attrs.to_string()
                     } else {
+                        // 增加左侧 padding 或者通过 margin 创造缩进感（既然没了 span，可以用 padding-left 来做缩进）
                         format!(
-                            r#"{} style="margin:6px 0;color:{};font-size:{};line-height:{};""#,
+                            r#"{} style="margin:6px 0;padding-left:8px;color:{};font-size:{};line-height:{};""#,
                             li_attrs, theme.text, theme.body_size, theme.line_height
                         )
                     };
                     
                     // 微信编辑器对 li 内部的块级或行内块级元素非常敏感。
-                    // 之前的 span 可能被微信解析成了导致换行的元素。
-                    // 现在的做法：完全不使用额外的标签（如 span），直接将符号作为普通文本拼接在内容最前面。
-                    // 为了保证符号和文字之间有间隔，我们用全角空格或者普通空格，并且直接应用原生的 color（因为无法单独给符号加颜色了，除非用极其安全的标签，但微信会折腾）。
-                    // 我们为了保证列表的颜色一致，使用一个没有任何 margin/padding 的纯内联 font 标签，或者干脆不用。
-                    // 最安全的微信列表方案：将符号和文本平铺。
+                    // 之前的 span 依然可能被微信解析成了导致换行的元素。
+                    // 现在的做法：完全不使用任何额外的标签（连 span 都不要），直接将符号作为普通文本拼接在内容最前面。
+                    // 为了让符号有些许辨识度，我们可以在符号后加个空格（普通空格或特殊空格）。
+                    // 注意：由于去掉了 span，符号的颜色将与 li 文本颜色一致，牺牲一点颜色强调，换取绝对的排版安全。
                     format!(
-                        r#"<li{}><span style="color:{};font-weight:700;">{}</span> {}</li>"#,
-                        style_attr, theme.primary, theme.list_marker, cleaned_content
+                        r#"<li{}>{} {}</li>"#,
+                        style_attr, theme.list_marker, cleaned_content
                     )
                 })
                 .into_owned();
